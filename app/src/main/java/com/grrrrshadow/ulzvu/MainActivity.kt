@@ -62,6 +62,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var tvUltrasoundAlert: TextView
     private lateinit var tvBpm: TextView
     private lateinit var tvMotionWarning: TextView
+    private lateinit var tvLastIncident: TextView
     private lateinit var tvRecentLog: TextView
     private lateinit var tvStatus: TextView
     private lateinit var spectrumView: SpectrumView
@@ -111,6 +112,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         tvUltrasoundAlert = findViewById(R.id.tvUltrasoundAlert)
         tvBpm = findViewById(R.id.tvBpm)
         tvMotionWarning = findViewById(R.id.tvMotionWarning)
+        tvLastIncident = findViewById(R.id.tvLastIncident)
         tvRecentLog = findViewById(R.id.tvRecentLog)
         tvStatus = findViewById(R.id.tvStatus)
         spectrumView = findViewById(R.id.spectrumView)
@@ -268,20 +270,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 consecutiveAbove = 0
             }
 
+            var newIncidentLine: String? = null
             if (!alertActive && consecutiveAbove >= DETECTION_HOLD_FRAMES) {
                 alertActive = true
                 incidentStartMs = System.currentTimeMillis()
-                EventLog.log(
-                    LogLevel.WARN, "Detekce",
-                    "ULTRAZVUK začal: ${"%.0f".format(frameFreq)} Hz @ ${"%.1f".format(frameDb)} dB · Tep: $lastBpmText"
-                )
+                val text = "ULTRAZVUK začal: ${"%.0f".format(frameFreq)} Hz @ ${"%.1f".format(frameDb)} dB · Tep: $lastBpmText"
+                EventLog.log(LogLevel.WARN, "Detekce", text)
+                newIncidentLine = text
             } else if (alertActive && consecutiveBelow >= DETECTION_HOLD_FRAMES) {
                 alertActive = false
                 val durationMs = System.currentTimeMillis() - incidentStartMs
-                EventLog.log(
-                    LogLevel.WARN, "Detekce",
-                    "ULTRAZVUK skončil: trval ${durationMs} ms · Tep: $lastBpmText"
-                )
+                val text = "ULTRAZVUK skončil: trval ${durationMs} ms · Tep: $lastBpmText"
+                EventLog.log(LogLevel.WARN, "Detekce", text)
+                newIncidentLine = text
             }
 
             // ultrasound-band peak specifically -- a full-spectrum peak is dominated by
@@ -291,10 +292,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             val isAlertActive = alertActive
             val ff = frameFreq
             val fd = frameDb
+            val incidentLine = newIncidentLine
 
             mainHandler.post {
                 spectrumView.update(dbCopy, analyzer.binWidthHz)
                 tvPeakInfo.text = getString(R.string.peak_format, peakFreq, peakDb)
+                if (incidentLine != null) {
+                    tvLastIncident.text = "${SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())} $incidentLine"
+                }
                 if (isAlertActive) {
                     tvUltrasoundAlert.text = getString(R.string.ultrasound_detected_format, ff, fd)
                     tvUltrasoundAlert.setBackgroundColor(ContextCompat.getColor(this, R.color.ultrasound_alert))

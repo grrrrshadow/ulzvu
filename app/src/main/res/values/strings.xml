@@ -8,17 +8,18 @@
     <string name="permission_denied">Bez přístupu k mikrofonu appka nic nezmůže.</string>
     <string name="probe_failed">Telefon nedovolil inicializovat žádný audio vstup.</string>
     <string name="config_format">Vzorkování: %1$d Hz · Zdroj: %2$s · Nyquist: %3$d Hz</string>
-    <string name="peak_format">Špička (nad 17 kHz): %1$.0f Hz @ %2$.1f dB</string>
+    <string name="peak_format">&gt;17kHz špička: %1$.0f Hz @ %2$.1f dB</string>
     <string name="ultrasound_detected_format">ULTRAZVUK: %1$.0f Hz @ %2$.1f dB</string>
     <string name="recording_in_progress">Nahrávám…</string>
     <string name="recording_failed">Nahrávání se nepodařilo uložit — podrobnosti v logu.</string>
     <string name="saved_format">Uloženo: Stažené soubory/Ulzvu/%1$s</string>
 
     <string name="open_log">Log</string>
-    <string name="log_hint">Chyby a incidenty (start/konec detekce) se ukládají do Stažené soubory/Ulzvu/ulzvu_log.txt</string>
+    <string name="log_hint">Chyby a incidenty (start/konec detekce) se ukládají do Stažené soubory/Ulzvu/ulzvu_log.txt. Běžné info hlášky (stav tepu, konfigurace) se ukládají jen do zobrazení tady v appce, ne do souboru.</string>
     <string name="log_empty">Zatím žádné záznamy.</string>
-    <string name="refresh_log">Obnovit</string>
+    <string name="refresh_log">Uložit</string>
     <string name="clear_log">Vymazat log</string>
+    <string name="no_incidents_yet">Zatím žádný incident.</string>
 
     <string name="hr_label">Tep:</string>
     <string name="hr_unreliable">– – –</string>

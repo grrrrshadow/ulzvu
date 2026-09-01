@@ -51,7 +51,9 @@ object EventLog {
         synchronized(lock) {
             entries.addLast(entry)
             if (entries.size > MAX_ENTRIES) entries.removeFirst()
-            appendToDownloads(format(entry))
+            // INFO is routine chatter (BPM ticks, config lines) -- only WARN/ERROR
+            // (incidents, failures) are worth persisting to the file on disk.
+            if (level != LogLevel.INFO) appendToDownloads(format(entry))
         }
     }
 
