@@ -62,6 +62,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var tvUltrasoundAlert: TextView
     private lateinit var tvBpm: TextView
     private lateinit var tvMotionWarning: TextView
+    private lateinit var tvRecentLog: TextView
     private lateinit var tvStatus: TextView
     private lateinit var spectrumView: SpectrumView
     private lateinit var btnToggleAnalysis: Button
@@ -110,6 +111,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         tvUltrasoundAlert = findViewById(R.id.tvUltrasoundAlert)
         tvBpm = findViewById(R.id.tvBpm)
         tvMotionWarning = findViewById(R.id.tvMotionWarning)
+        tvRecentLog = findViewById(R.id.tvRecentLog)
         tvStatus = findViewById(R.id.tvStatus)
         spectrumView = findViewById(R.id.spectrumView)
         btnToggleAnalysis = findViewById(R.id.btnToggleAnalysis)
@@ -137,6 +139,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
 
         EventLog.log(LogLevel.INFO, "App", "Spuštěno na ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
+        updateRecentLogView()
+    }
+
+    private fun updateRecentLogView() {
+        val lines = EventLog.snapshot().takeLast(4).map { EventLog.format(it) }
+        tvRecentLog.text = if (lines.isEmpty()) getString(R.string.log_empty) else lines.joinToString("\n")
     }
 
     private fun installCrashLogger() {
@@ -167,6 +175,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (cfg == null) {
             tvStatus.text = getString(R.string.probe_failed)
             EventLog.log(LogLevel.WARN, "Audio", "Žádná funkční kombinace vzorkování/zdroje nenalezena")
+            updateRecentLogView()
             return
         }
         config = cfg
@@ -184,11 +193,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         } catch (e: Exception) {
             EventLog.log(LogLevel.ERROR, "Audio", "AudioRecord() selhal", e)
             tvStatus.text = getString(R.string.probe_failed)
+            updateRecentLogView()
             return
         }
         if (record.state != AudioRecord.STATE_INITIALIZED) {
             tvStatus.text = getString(R.string.probe_failed)
             EventLog.log(LogLevel.ERROR, "Audio", "AudioRecord se neinicializoval (state=${record.state})")
+            updateRecentLogView()
             return
         }
         audioRecord = record
@@ -291,6 +302,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     tvUltrasoundAlert.text = getString(R.string.status_idle)
                     tvUltrasoundAlert.setBackgroundColor(ContextCompat.getColor(this, android.R.color.transparent))
                 }
+                updateRecentLogView()
             }
         }
     }
@@ -314,6 +326,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         EventLog.log(LogLevel.INFO, "Audio", "Analýza zastavena")
 
         stopHeartRate()
+        updateRecentLogView()
     }
 
     private fun startRecording() {
@@ -324,6 +337,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             } catch (e: IOException) {
                 EventLog.log(LogLevel.ERROR, "Recording", "Nelze otevřít dočasný PCM soubor", e)
                 tvStatus.text = getString(R.string.recording_failed)
+                updateRecentLogView()
                 return
             }
         }
@@ -331,6 +345,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnToggleRecording.text = getString(R.string.stop_recording)
         tvStatus.text = getString(R.string.recording_in_progress)
         EventLog.log(LogLevel.INFO, "Recording", "Nahrávání spuštěno")
+        updateRecentLogView()
     }
 
     private fun writePcmChunk(samples: ShortArray) {
@@ -365,6 +380,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (cfg == null || cacheFile == null || !cacheFile.exists() || cacheFile.length() == 0L) {
             tvStatus.text = getString(R.string.recording_failed)
             EventLog.log(LogLevel.ERROR, "Recording", "Dočasný PCM soubor chybí nebo je prázdný")
+            updateRecentLogView()
             return
         }
 
@@ -377,6 +393,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         } else {
             getString(R.string.recording_failed)
         }
+        updateRecentLogView()
     }
 
     private fun saveWavToDownloads(pcmFile: File, sampleRateHz: Int): String? {
@@ -423,11 +440,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val registered = sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
         if (!registered) {
             EventLog.log(LogLevel.ERROR, "HeartRate", "registerListener selhal pro ${sensor.name}")
+            updateRecentLogView()
             return
         }
         tvBpm.text = getString(R.string.hr_unreliable)
         tvMotionWarning.visibility = View.INVISIBLE
         EventLog.log(LogLevel.INFO, "HeartRate", "Měření spuštěno (${sensor.name})")
+        updateRecentLogView()
         mainHandler.post(hrUpdateRunnable)
     }
 
