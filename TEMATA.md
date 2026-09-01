@@ -81,7 +81,30 @@ Vedlejší větev: vibrometr na tep srdce (přes akcelerometr, ne mikrofon).
 - `HeartRateActivity`/`activity_heart_rate.xml` smazány, appka má teď jen
   dvě obrazovky: hlavní (ultrazvuk + tep) a Log.
 
-### 3.5 Otevřené TODO (až přijde zpětná vazba na v2/v3)
+### 3.5 UI úpravy po prvním živém testu appky (uživatel zkoušel v2 naostro)
+
+- Test: čtení české abecedy nahlas u appky ukázalo false-positive detekce
+  na písmenech se sykavkou (C, F, S, X — všechny mají /s/-like hlásku ve
+  výslovnosti). Potvrzuje, že širokopásmový práh nad 17 kHz reaguje i na
+  běžnou řeč, ne jen na potenciální ultrazvuk — viz 4.4, návrh na zúžení
+  filtru (úzkopásmový + perzistentní signál) zůstává otevřený, zatím
+  neimplementováno.
+- Layout přeuspořádán: tep přesunut nad spektrum (hned pod konfiguraci),
+  pod ním živý výpis posledních řádků logu — uživatel to chtěl mít na očích
+  bez nutnosti otevírat samostatnou obrazovku Log.
+- `EventLog`: INFO úroveň (tep každých 500 ms, konfigurace, start/stop) se
+  už nezapisuje do `ulzvu_log.txt` — jen se živě zobrazuje v appce. Do
+  souboru jde jen WARN/ERROR (incidenty, chyby), aby časté BPM řádky
+  nezaplavily soubor a nezatlačily incidenty pryč z pohledu.
+- Poslední incident ultrazvuku je připíchnutý ve zvláštním řádku (červeně,
+  tučně) nad běžným výpisem logu, aby nezmizel pod novějšími řádky.
+- **Kruhový buffer posledních 30 s** (`REWIND_BUFFER_SECONDS` v
+  `MainActivity.kt`) — běží pořád na pozadí, dokud je analýza spuštěná,
+  nezávisle na tlačítku "Nahrát WAV". Tlačítko "Uložit posledních 30 s"
+  ho zpětně uloží jako WAV do Downloads/Ulzvu — řeší situaci, kdy si
+  uživatel něčeho všimne až POTÉ, co to proběhlo.
+
+### 3.6 Otevřené TODO (až přijde zpětná vazba na v2/v3)
 
 - Ověřit, jestli oprava crash bugu skutečně vyřešila "nejde nahrát WAV".
 - Podívat se do `ulzvu_log.txt` po prvním testu — hledat cokoliv na úrovni
@@ -91,6 +114,9 @@ Vedlejší větev: vibrometr na tep srdce (přes akcelerometr, ne mikrofon).
 - Až bude Motorola z servisu, otestovat probing (jestli dostane vyšší
   vzorkování než Oppo — střední třída má šanci na 96 kHz, kde Oppo možná
   spadne na 48 kHz).
+- Zúžit detekční filtr podle 4.4 (úzkopásmový + perzistentní tón místo
+  širokopásmového prahu), až bude čas — teď potvrzeno reálným testem
+  (sykavky v řeči), že široký práh dává falešné poplachy.
 
 ## 4. Cílová technologie: parametrické ultrazvukové směrové reproduktory
 

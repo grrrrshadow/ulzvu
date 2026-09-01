@@ -13,6 +13,8 @@
     <string name="recording_in_progress">Nahrávám…</string>
     <string name="recording_failed">Nahrávání se nepodařilo uložit — podrobnosti v logu.</string>
     <string name="saved_format">Uloženo: Stažené soubory/Ulzvu/%1$s</string>
+    <string name="rewind_button">Uložit posledních 30 s</string>
+    <string name="rewind_failed">Zpětné uložení se nepodařilo — podrobnosti v logu.</string>
 
     <string name="open_log">Log</string>
     <string name="log_hint">Chyby a incidenty (start/konec detekce) se ukládají do Stažené soubory/Ulzvu/ulzvu_log.txt. Běžné info hlášky (stav tepu, konfigurace) se ukládají jen do zobrazení tady v appce, ne do souboru.</string>
