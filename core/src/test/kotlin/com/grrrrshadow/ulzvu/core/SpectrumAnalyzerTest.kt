@@ -44,6 +44,25 @@ class SpectrumAnalyzerTest {
     }
 
     @Test
+    fun `finds a 1_2 Hz vibration (72 BPM) via the DoubleArray overload`() {
+        val sampleRate = 50
+        val fftSize = 512
+        val analyzer = SpectrumAnalyzer(fftSize, sampleRate)
+        val freqHz = 1.2
+        val samples = DoubleArray(fftSize) { i -> sin(2.0 * PI * freqHz * i / sampleRate) }
+        val db = DoubleArray(analyzer.binCount)
+        analyzer.analyze(samples, db)
+
+        val (peakFreq, _) = analyzer.peakInRange(db, 0.7, 3.5)
+        val bpm = peakFreq * 60.0
+
+        assertTrue(
+            abs(bpm - 72.0) <= analyzer.binWidthHz * 60.0,
+            "expected ~72 BPM, got $bpm BPM (bin width ${analyzer.binWidthHz} Hz)"
+        )
+    }
+
+    @Test
     fun `wav header has correct RIFF and data chunk sizes`() {
         val header = WavHeader.build(sampleRateHz = 48000, pcmDataBytes = 1000)
         assertEquals(44, header.size)

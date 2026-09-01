@@ -16,6 +16,14 @@ Android testovací appka na detekci a nahrávání ultrazvuku telefonním mikrof
   přístroj.
 - **Nahrávání do WAV** (`Stažené soubory/Ulzvu/…`) pro pozdější analýzu
   v Audacity/Spectroidu nebo porovnání mezi oběma telefony.
+- **Log chyb a incidentů** — každá chyba (výjimka, pád, selhání zápisu) i každý
+  začátek/konec detekce ultrazvuku se s časem na vteřinu zapisuje rovnou do
+  `Stažené soubory/Ulzvu/ulzvu_log.txt`. V appce je pod tlačítkem „Log“.
+- **Vibrometr (tep)** — druhá obrazovka používající akcelerometr telefonu
+  (ballistokardiografie): přiložený na zápěstí/hruď zachytí periodický otřes
+  tepu. Stejná FFT logika jako u ultrazvuku, jen v pásmu 0,7–3,5 Hz (42–210
+  BPM). Při velkém pohybu (poskakující ruka) se měření sama označí jako
+  nespolehlivé, místo aby vypsala nesmyslné číslo.
 
 ## Fyzické limity (viz rozbor v konverzaci)
 
@@ -54,7 +62,18 @@ SDK stáhne bez problémů.
 ### Poznámka k tomuto repozitáři
 
 Appka byla napsaná v izolovaném prostředí bez přístupu k `dl.google.com`
-(Android SDK). Modul `core` (FFT/detekční logika) je proto reálně
-zkompilovaný a otestovaný přímo tady (3/3 testů prošlo, včetně detekce
-21 kHz tónu). Modul `app` (Android UI, `AudioRecord`) čeká na první build
-přes GitHub Actions nebo Android Studio.
+(Android SDK). Modul `core` (FFT/detekční logika, sdílená mezi ultrazvukem
+i vibrometrem) je proto reálně zkompilovaný a otestovaný přímo tady
+(4/4 testů prošlo — 21 kHz tón, 1 kHz tón, WAV hlavička, 1,2 Hz/72 BPM
+vibrace). Modul `app` (Android UI, `AudioRecord`, senzory) čeká na první
+build přes GitHub Actions nebo Android Studio.
+
+### Známé limity v1.1
+
+- Práh pro rozpoznání pohybu ve vibrometru (`MOTION_STDDEV_THRESHOLD` v
+  `HeartRateActivity.kt`) je odhad, ne změřená hodnota — na reálném telefonu
+  ho možná bude potřeba doladit nahoru/dolů podle toho, jak moc citlivě
+  hlásí „Pohyb ruší měření“.
+- Detekce ultrazvuku je pořád heuristika (adaptivní šumové pozadí + práh),
+  ne kalibrovaný přístroj — dobrá na „něco tu je/není“, ne na přesnou
+  hladinu.

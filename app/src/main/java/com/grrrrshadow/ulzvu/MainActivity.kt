@@ -2,6 +2,7 @@ package com.grrrrshadow.ulzvu
 
 import android.Manifest
 import android.content.ContentValues
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -20,6 +21,7 @@ import com.grrrrshadow.ulzvu.core.SpectrumAnalyzer
 import com.grrrrshadow.ulzvu.core.WavHeader
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.text.SimpleDateFormat
@@ -31,6 +33,7 @@ private const val FFT_SIZE = 2048
 private const val ULTRASOUND_BAND_START_HZ = 17000.0
 private const val DETECTION_MARGIN_DB = 12.0
 private const val NOISE_FLOOR_ALPHA = 0.01
+private const val DETECTION_HOLD_FRAMES = 5 // consecutive frames required before flipping the alert state
 
 class MainActivity : AppCompatActivity() {
 
@@ -56,12 +59,16 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var running = false
 
     @Volatile private var recording = false
+    private val recordingLock = Any()
     private var pcmCacheFile: File? = null
     private var pcmOut: FileOutputStream? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        EventLog.init(applicationContext)
+        installCrashLogger()
 
         tvDeviceInfo = findViewById(R.id.tvDeviceInfo)
         tvConfigInfo = findViewById(R.id.tvConfigInfo)
@@ -81,6 +88,22 @@ class MainActivity : AppCompatActivity() {
         btnToggleRecording.setOnClickListener {
             if (recording) stopRecording() else startRecording()
         }
+        findViewById<Button>(R.id.btnOpenLog).setOnClickListener {
+            startActivity(Intent(this, LogActivity::class.java))
+        }
+        findViewById<Button>(R.id.btnOpenHeartRate).setOnClickListener {
+            startActivity(Intent(this, HeartRateActivity::class.java))
+        }
+
+        EventLog.log(LogLevel.INFO, "App", "Spuštěno na ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
+    }
+
+    private fun installCrashLogger() {
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            EventLog.log(LogLevel.ERROR, "Crash", "Neošetřená výjimka ve vlákně ${thread.name}", throwable)
+            previousHandler?.uncaughtException(thread, throwable)
+        }
     }
 
     private fun requestPermissionAndStart() {
@@ -94,23 +117,37 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startAnalysis() {
-        val cfg = AudioProber.probe(this)
+        val cfg = try {
+            AudioProber.probe(this)
+        } catch (e: Exception) {
+            EventLog.log(LogLevel.ERROR, "Audio", "AudioProber.probe selhal", e)
+            null
+        }
         if (cfg == null) {
             tvStatus.text = getString(R.string.probe_failed)
+            EventLog.log(LogLevel.WARN, "Audio", "Žádná funkční kombinace vzorkování/zdroje nenalezena")
             return
         }
         config = cfg
 
         val nyquist = cfg.sampleRateHz / 2
         tvConfigInfo.text = getString(R.string.config_format, cfg.sampleRateHz, cfg.sourceName, nyquist)
+        EventLog.log(LogLevel.INFO, "Audio", "Konfigurace: ${cfg.sampleRateHz} Hz, zdroj ${cfg.sourceName}, Nyquist $nyquist Hz")
 
-        val record = AudioRecord(
-            cfg.source, cfg.sampleRateHz,
-            AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
-            cfg.minBufferBytes
-        )
+        val record = try {
+            AudioRecord(
+                cfg.source, cfg.sampleRateHz,
+                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
+                cfg.minBufferBytes
+            )
+        } catch (e: Exception) {
+            EventLog.log(LogLevel.ERROR, "Audio", "AudioRecord() selhal", e)
+            tvStatus.text = getString(R.string.probe_failed)
+            return
+        }
         if (record.state != AudioRecord.STATE_INITIALIZED) {
             tvStatus.text = getString(R.string.probe_failed)
+            EventLog.log(LogLevel.ERROR, "Audio", "AudioRecord se neinicializoval (state=${record.state})")
             return
         }
         audioRecord = record
@@ -122,7 +159,11 @@ class MainActivity : AppCompatActivity() {
         tvStatus.text = ""
 
         analysisThread = thread(name = "ulzvu-analysis") {
-            analysisLoop(record, cfg.sampleRateHz)
+            try {
+                analysisLoop(record, cfg.sampleRateHz)
+            } catch (e: Exception) {
+                EventLog.log(LogLevel.ERROR, "Audio", "Analyzační smyčka spadla", e)
+            }
         }
     }
 
@@ -131,6 +172,11 @@ class MainActivity : AppCompatActivity() {
         val noiseFloor = DoubleArray(FFT_SIZE / 2) { -90.0 }
         val buffer = ShortArray(FFT_SIZE)
         val db = DoubleArray(FFT_SIZE / 2)
+
+        var alertActive = false
+        var consecutiveAbove = 0
+        var consecutiveBelow = 0
+        var incidentStartMs = 0L
 
         while (running) {
             var offset = 0
@@ -145,32 +191,55 @@ class MainActivity : AppCompatActivity() {
 
             analyzer.analyze(buffer, db)
 
-            var detected = false
-            var detectedFreq = 0.0
-            var detectedDb = -90.0
+            var frameAboveThreshold = false
+            var frameFreq = 0.0
+            var frameDb = -90.0
             for (b in db.indices) {
                 val freq = analyzer.frequencyOfBin(b)
                 if (freq >= ULTRASOUND_BAND_START_HZ && db[b] - noiseFloor[b] > DETECTION_MARGIN_DB) {
-                    if (db[b] > detectedDb) {
-                        detected = true
-                        detectedFreq = freq
-                        detectedDb = db[b]
+                    if (db[b] > frameDb) {
+                        frameAboveThreshold = true
+                        frameFreq = freq
+                        frameDb = db[b]
                     }
                 }
                 noiseFloor[b] += (db[b] - noiseFloor[b]) * NOISE_FLOOR_ALPHA
             }
 
-            val (peakFreq, peakDb) = analyzer.peakInRange(db, 0.0, sampleRateHz / 2.0)
+            if (frameAboveThreshold) {
+                consecutiveAbove++
+                consecutiveBelow = 0
+            } else {
+                consecutiveBelow++
+                consecutiveAbove = 0
+            }
+
+            if (!alertActive && consecutiveAbove >= DETECTION_HOLD_FRAMES) {
+                alertActive = true
+                incidentStartMs = System.currentTimeMillis()
+                EventLog.log(
+                    LogLevel.WARN, "Detekce",
+                    "ULTRAZVUK začal: ${"%.0f".format(frameFreq)} Hz @ ${"%.1f".format(frameDb)} dB"
+                )
+            } else if (alertActive && consecutiveBelow >= DETECTION_HOLD_FRAMES) {
+                alertActive = false
+                val durationMs = System.currentTimeMillis() - incidentStartMs
+                EventLog.log(LogLevel.WARN, "Detekce", "ULTRAZVUK skončil: trval ${durationMs} ms")
+            }
+
+            // ultrasound-band peak specifically -- a full-spectrum peak is dominated by
+            // ordinary handling/voice noise and makes the readout jump around uselessly
+            val (peakFreq, peakDb) = analyzer.peakInRange(db, ULTRASOUND_BAND_START_HZ, sampleRateHz / 2.0)
             val dbCopy = db.copyOf()
-            val isDetected = detected
-            val df = detectedFreq
-            val dd = detectedDb
+            val isAlertActive = alertActive
+            val ff = frameFreq
+            val fd = frameDb
 
             mainHandler.post {
                 spectrumView.update(dbCopy, analyzer.binWidthHz)
                 tvPeakInfo.text = getString(R.string.peak_format, peakFreq, peakDb)
-                if (isDetected) {
-                    tvUltrasoundAlert.text = getString(R.string.ultrasound_detected_format, df, dd)
+                if (isAlertActive) {
+                    tvUltrasoundAlert.text = getString(R.string.ultrasound_detected_format, ff, fd)
                     tvUltrasoundAlert.setBackgroundColor(ContextCompat.getColor(this, R.color.ultrasound_alert))
                 } else {
                     tvUltrasoundAlert.text = getString(R.string.status_idle)
@@ -185,40 +254,69 @@ class MainActivity : AppCompatActivity() {
         if (recording) stopRecording()
         analysisThread?.join(500)
         analysisThread = null
-        audioRecord?.apply {
-            stop()
-            release()
+        try {
+            audioRecord?.apply {
+                stop()
+                release()
+            }
+        } catch (e: Exception) {
+            EventLog.log(LogLevel.ERROR, "Audio", "Chyba při zastavování AudioRecord", e)
         }
         audioRecord = null
         btnToggleAnalysis.text = getString(R.string.start_analysis)
         btnToggleRecording.isEnabled = false
+        EventLog.log(LogLevel.INFO, "Audio", "Analýza zastavena")
     }
 
     private fun startRecording() {
-        pcmCacheFile = File(cacheDir, "ulzvu_tmp.pcm")
-        pcmOut = FileOutputStream(pcmCacheFile)
+        synchronized(recordingLock) {
+            try {
+                pcmCacheFile = File(cacheDir, "ulzvu_tmp.pcm")
+                pcmOut = FileOutputStream(pcmCacheFile)
+            } catch (e: IOException) {
+                EventLog.log(LogLevel.ERROR, "Recording", "Nelze otevřít dočasný PCM soubor", e)
+                tvStatus.text = getString(R.string.recording_failed)
+                return
+            }
+        }
         recording = true
         btnToggleRecording.text = getString(R.string.stop_recording)
         tvStatus.text = getString(R.string.recording_in_progress)
+        EventLog.log(LogLevel.INFO, "Recording", "Nahrávání spuštěno")
     }
 
     private fun writePcmChunk(samples: ShortArray) {
-        val out = pcmOut ?: return
-        val bytes = ByteBuffer.allocate(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
-        samples.forEach { bytes.putShort(it) }
-        out.write(bytes.array())
+        synchronized(recordingLock) {
+            val out = pcmOut ?: return
+            try {
+                val bytes = ByteBuffer.allocate(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+                samples.forEach { bytes.putShort(it) }
+                out.write(bytes.array())
+            } catch (e: IOException) {
+                EventLog.log(LogLevel.ERROR, "Recording", "Zápis PCM chunku selhal", e)
+            }
+        }
     }
 
     private fun stopRecording() {
         recording = false
         btnToggleRecording.text = getString(R.string.start_recording)
-        pcmOut?.close()
-        pcmOut = null
+
+        synchronized(recordingLock) {
+            try {
+                pcmOut?.flush()
+                pcmOut?.close()
+            } catch (e: IOException) {
+                EventLog.log(LogLevel.ERROR, "Recording", "Chyba při zavírání PCM souboru", e)
+            }
+            pcmOut = null
+        }
 
         val cfg = config
         val cacheFile = pcmCacheFile
         if (cfg == null || cacheFile == null || !cacheFile.exists() || cacheFile.length() == 0L) {
             tvStatus.text = getString(R.string.recording_failed)
+            EventLog.log(LogLevel.ERROR, "Recording", "Dočasný PCM soubor chybí nebo je prázdný")
             return
         }
 
@@ -237,21 +335,35 @@ class MainActivity : AppCompatActivity() {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val displayName = "ulzvu_$timestamp.wav"
 
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, displayName)
-            put(MediaStore.Downloads.MIME_TYPE, "audio/wav")
-            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Ulzvu")
-        }
+        return try {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, displayName)
+                put(MediaStore.Downloads.MIME_TYPE, "audio/wav")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Ulzvu")
+            }
 
-        val resolver = contentResolver
-        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri == null) {
+                EventLog.log(LogLevel.ERROR, "Recording", "MediaStore.insert vrátil null pro $displayName")
+                return null
+            }
 
-        val opened = resolver.openOutputStream(uri)?.use { out ->
-            val header = WavHeader.build(sampleRateHz, pcmFile.length().toInt())
-            out.write(header)
-            pcmFile.inputStream().use { it.copyTo(out) }
+            val stream = contentResolver.openOutputStream(uri)
+            if (stream == null) {
+                EventLog.log(LogLevel.ERROR, "Recording", "openOutputStream vrátil null pro $uri")
+                return null
+            }
+            stream.use { out ->
+                val header = WavHeader.build(sampleRateHz, pcmFile.length().toInt())
+                out.write(header)
+                pcmFile.inputStream().use { it.copyTo(out) }
+            }
+            EventLog.log(LogLevel.INFO, "Recording", "Uloženo $displayName (${pcmFile.length()} B PCM)")
+            displayName
+        } catch (e: Exception) {
+            EventLog.log(LogLevel.ERROR, "Recording", "Uložení WAV selhalo", e)
+            null
         }
-        return if (opened != null) displayName else null
     }
 
     override fun onDestroy() {

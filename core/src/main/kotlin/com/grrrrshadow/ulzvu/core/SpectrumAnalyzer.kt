@@ -20,11 +20,25 @@ class SpectrumAnalyzer(private val fftSize: Int, sampleRateHz: Int) {
     /** samples: PCM16 mono, length must equal fftSize. Writes magnitude spectrum in dB into outDb. */
     fun analyze(samples: ShortArray, outDb: DoubleArray) {
         require(samples.size == fftSize)
-        require(outDb.size == binCount)
         for (i in 0 until fftSize) {
             re[i] = (samples[i] / 32768.0) * hannWindow[i]
             im[i] = 0.0
         }
+        computeDb(outDb)
+    }
+
+    /** samples: any already-centered signal (roughly -1..1), length must equal fftSize. */
+    fun analyze(samples: DoubleArray, outDb: DoubleArray) {
+        require(samples.size == fftSize)
+        for (i in 0 until fftSize) {
+            re[i] = samples[i] * hannWindow[i]
+            im[i] = 0.0
+        }
+        computeDb(outDb)
+    }
+
+    private fun computeDb(outDb: DoubleArray) {
+        require(outDb.size == binCount)
         FFT.transform(re, im)
         for (bin in 0 until binCount) {
             val mag = Math.hypot(re[bin], im[bin]) / fftSize
