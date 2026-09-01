@@ -20,13 +20,9 @@
     <string name="refresh_log">Obnovit</string>
     <string name="clear_log">Vymazat log</string>
 
-    <string name="open_heart_rate">Vibrometr (tep)</string>
-    <string name="hr_hint">Přiložte telefon pevně k zápěstí nebo hrudi a držte ho v klidu. Měří se vibrace 42–210 tepů/min.</string>
-    <string name="start_hr">Spustit měření</string>
-    <string name="stop_hr">Zastavit měření</string>
-    <string name="hr_measuring">Měřím…</string>
+    <string name="hr_label">Tep:</string>
     <string name="hr_unreliable">– – –</string>
-    <string name="hr_motion_warning">Pohyb ruší měření — držte telefon v klidu</string>
+    <string name="hr_motion_warning">Pohyb ruší měření tepu — přiložte telefon pevně k zápěstí/hrudi a držte v klidu</string>
     <string name="bpm_format">%1$.0f BPM</string>
     <string name="no_accelerometer">Telefon nemá použitelný akcelerometr.</string>
 </resources>

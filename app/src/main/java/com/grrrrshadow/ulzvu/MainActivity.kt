@@ -4,6 +4,10 @@ import android.Manifest
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.os.Build
@@ -12,6 +16,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,6 +33,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.concurrent.thread
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 private const val FFT_SIZE = 2048
 private const val ULTRASOUND_BAND_START_HZ = 17000.0
@@ -35,12 +42,26 @@ private const val DETECTION_MARGIN_DB = 12.0
 private const val NOISE_FLOOR_ALPHA = 0.01
 private const val DETECTION_HOLD_FRAMES = 5 // consecutive frames required before flipping the alert state
 
-class MainActivity : AppCompatActivity() {
+private const val HR_WINDOW_SIZE = 512 // ~10 s of samples at the ~50 Hz SENSOR_DELAY_GAME rate
+private const val HR_MIN_HZ = 0.7 // 42 BPM
+private const val HR_MAX_HZ = 3.5 // 210 BPM
+private const val HR_MOTION_STDDEV_THRESHOLD = 1.2 // m/s^2 -- hand shake vs. pulse-scale vibration
+private const val HR_UPDATE_INTERVAL_MS = 500L
+
+/**
+ * Ultrasound spectrum and heart-rate vibrometer run off separate hardware (mic vs.
+ * accelerometer) and are shown on one screen at once, started/stopped together by the
+ * same button, so both a possible ultrasonic source and the wearer's pulse are visible
+ * and logged side by side instead of needing to switch screens.
+ */
+class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private lateinit var tvDeviceInfo: TextView
     private lateinit var tvConfigInfo: TextView
     private lateinit var tvPeakInfo: TextView
     private lateinit var tvUltrasoundAlert: TextView
+    private lateinit var tvBpm: TextView
+    private lateinit var tvMotionWarning: TextView
     private lateinit var tvStatus: TextView
     private lateinit var spectrumView: SpectrumView
     private lateinit var btnToggleAnalysis: Button
@@ -63,6 +84,19 @@ class MainActivity : AppCompatActivity() {
     private var pcmCacheFile: File? = null
     private var pcmOut: FileOutputStream? = null
 
+    private lateinit var sensorManager: SensorManager
+    private var heartRateSensor: Sensor? = null
+    private val hrTimestampsNs = ArrayDeque<Long>()
+    private val hrMagnitudes = ArrayDeque<Double>()
+    private val hrBufferLock = Any()
+    @Volatile private var lastBpmText: String = "–"
+    private val hrUpdateRunnable = object : Runnable {
+        override fun run() {
+            computeAndDisplayBpm()
+            if (running) mainHandler.postDelayed(this, HR_UPDATE_INTERVAL_MS)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -74,6 +108,8 @@ class MainActivity : AppCompatActivity() {
         tvConfigInfo = findViewById(R.id.tvConfigInfo)
         tvPeakInfo = findViewById(R.id.tvPeakInfo)
         tvUltrasoundAlert = findViewById(R.id.tvUltrasoundAlert)
+        tvBpm = findViewById(R.id.tvBpm)
+        tvMotionWarning = findViewById(R.id.tvMotionWarning)
         tvStatus = findViewById(R.id.tvStatus)
         spectrumView = findViewById(R.id.spectrumView)
         btnToggleAnalysis = findViewById(R.id.btnToggleAnalysis)
@@ -81,6 +117,14 @@ class MainActivity : AppCompatActivity() {
 
         tvDeviceInfo.text =
             "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
+
+        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+        heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
+            ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        if (heartRateSensor == null) {
+            tvBpm.text = getString(R.string.no_accelerometer)
+            EventLog.log(LogLevel.ERROR, "HeartRate", "Zařízení nemá akcelerometr")
+        }
 
         btnToggleAnalysis.setOnClickListener {
             if (running) stopAnalysis() else requestPermissionAndStart()
@@ -90,9 +134,6 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnOpenLog).setOnClickListener {
             startActivity(Intent(this, LogActivity::class.java))
-        }
-        findViewById<Button>(R.id.btnOpenHeartRate).setOnClickListener {
-            startActivity(Intent(this, HeartRateActivity::class.java))
         }
 
         EventLog.log(LogLevel.INFO, "App", "Spuštěno na ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
@@ -165,6 +206,8 @@ class MainActivity : AppCompatActivity() {
                 EventLog.log(LogLevel.ERROR, "Audio", "Analyzační smyčka spadla", e)
             }
         }
+
+        startHeartRate()
     }
 
     private fun analysisLoop(record: AudioRecord, sampleRateHz: Int) {
@@ -219,12 +262,15 @@ class MainActivity : AppCompatActivity() {
                 incidentStartMs = System.currentTimeMillis()
                 EventLog.log(
                     LogLevel.WARN, "Detekce",
-                    "ULTRAZVUK začal: ${"%.0f".format(frameFreq)} Hz @ ${"%.1f".format(frameDb)} dB"
+                    "ULTRAZVUK začal: ${"%.0f".format(frameFreq)} Hz @ ${"%.1f".format(frameDb)} dB · Tep: $lastBpmText"
                 )
             } else if (alertActive && consecutiveBelow >= DETECTION_HOLD_FRAMES) {
                 alertActive = false
                 val durationMs = System.currentTimeMillis() - incidentStartMs
-                EventLog.log(LogLevel.WARN, "Detekce", "ULTRAZVUK skončil: trval ${durationMs} ms")
+                EventLog.log(
+                    LogLevel.WARN, "Detekce",
+                    "ULTRAZVUK skončil: trval ${durationMs} ms · Tep: $lastBpmText"
+                )
             }
 
             // ultrasound-band peak specifically -- a full-spectrum peak is dominated by
@@ -266,6 +312,8 @@ class MainActivity : AppCompatActivity() {
         btnToggleAnalysis.text = getString(R.string.start_analysis)
         btnToggleRecording.isEnabled = false
         EventLog.log(LogLevel.INFO, "Audio", "Analýza zastavena")
+
+        stopHeartRate()
     }
 
     private fun startRecording() {
@@ -364,6 +412,87 @@ class MainActivity : AppCompatActivity() {
             EventLog.log(LogLevel.ERROR, "Recording", "Uložení WAV selhalo", e)
             null
         }
+    }
+
+    private fun startHeartRate() {
+        val sensor = heartRateSensor ?: return
+        synchronized(hrBufferLock) {
+            hrTimestampsNs.clear()
+            hrMagnitudes.clear()
+        }
+        val registered = sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
+        if (!registered) {
+            EventLog.log(LogLevel.ERROR, "HeartRate", "registerListener selhal pro ${sensor.name}")
+            return
+        }
+        tvBpm.text = getString(R.string.hr_unreliable)
+        tvMotionWarning.visibility = View.INVISIBLE
+        EventLog.log(LogLevel.INFO, "HeartRate", "Měření spuštěno (${sensor.name})")
+        mainHandler.post(hrUpdateRunnable)
+    }
+
+    private fun stopHeartRate() {
+        sensorManager.unregisterListener(this)
+        mainHandler.removeCallbacks(hrUpdateRunnable)
+        if (heartRateSensor != null) EventLog.log(LogLevel.INFO, "HeartRate", "Měření zastaveno")
+    }
+
+    override fun onSensorChanged(event: SensorEvent) {
+        val mag = sqrt(
+            (event.values[0] * event.values[0] +
+                event.values[1] * event.values[1] +
+                event.values[2] * event.values[2]).toDouble()
+        )
+        synchronized(hrBufferLock) {
+            hrTimestampsNs.addLast(event.timestamp)
+            hrMagnitudes.addLast(mag)
+            while (hrMagnitudes.size > HR_WINDOW_SIZE) {
+                hrTimestampsNs.removeFirst()
+                hrMagnitudes.removeFirst()
+            }
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+    private fun computeAndDisplayBpm() {
+        val snapshot: Pair<DoubleArray, Double>? = synchronized(hrBufferLock) {
+            if (hrMagnitudes.size < HR_WINDOW_SIZE) return@synchronized null
+            val ts = hrTimestampsNs.toLongArray()
+            val avgDtNs = (ts.last() - ts.first()).toDouble() / (ts.size - 1)
+            if (avgDtNs <= 0) return@synchronized null
+            hrMagnitudes.toDoubleArray() to (1_000_000_000.0 / avgDtNs)
+        }
+        val (samples, sampleRateHz) = snapshot ?: return
+
+        val mean = samples.average()
+        val stddev = sqrt(samples.sumOf { (it - mean) * (it - mean) } / samples.size)
+
+        if (stddev > HR_MOTION_STDDEV_THRESHOLD) {
+            tvMotionWarning.visibility = View.VISIBLE
+            tvBpm.text = getString(R.string.hr_unreliable)
+            lastBpmText = "nespolehlivý (pohyb)"
+            return
+        }
+        tvMotionWarning.visibility = View.INVISIBLE
+
+        val centered = DoubleArray(samples.size) { samples[it] - mean }
+        val maxAbs = centered.maxOf { abs(it) }.coerceAtLeast(1e-6)
+        val normalized = DoubleArray(centered.size) { centered[it] / maxAbs }
+
+        val hrAnalyzer = SpectrumAnalyzer(HR_WINDOW_SIZE, sampleRateHz.toInt().coerceAtLeast(1))
+        val db = DoubleArray(hrAnalyzer.binCount)
+        hrAnalyzer.analyze(normalized, db)
+
+        val (peakFreq, peakDb) = hrAnalyzer.peakInRange(db, HR_MIN_HZ, HR_MAX_HZ)
+        val bpm = peakFreq * 60.0
+
+        tvBpm.text = getString(R.string.bpm_format, bpm)
+        lastBpmText = "%.0f BPM".format(bpm)
+        EventLog.log(
+            LogLevel.INFO, "HeartRate",
+            "Odhad ${"%.0f".format(bpm)} BPM (${"%.1f".format(peakDb)} dB, vzorkování ${"%.0f".format(sampleRateHz)} Hz)"
+        )
     }
 
     override fun onDestroy() {

@@ -56,6 +56,44 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/hr_label"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tvBpm"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:textColor="@color/accent"
+            android:textSize="20sp"
+            android:fontFamily="monospace"
+            android:textStyle="bold"
+            android:text="@string/hr_unreliable" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvMotionWarning"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:padding="4dp"
+        android:textSize="12sp"
+        android:textColor="@color/ultrasound_alert"
+        android:text="@string/hr_motion_warning"
+        android:visibility="invisible" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
         android:orientation="horizontal">
 
         <Button
@@ -83,26 +121,11 @@
         android:textColor="@color/text_secondary"
         android:textSize="12sp" />
 
-    <LinearLayout
+    <Button
+        android:id="@+id/btnOpenLog"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/btnOpenHeartRate"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/open_heart_rate" />
-
-        <Button
-            android:id="@+id/btnOpenLog"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:text="@string/open_log" />
-    </LinearLayout>
+        android:text="@string/open_log" />
 
 </LinearLayout>

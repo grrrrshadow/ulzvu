@@ -69,7 +69,19 @@ Vedlejší větev: vibrometr na tep srdce (přes akcelerometr, ne mikrofon).
   nedá sestavit — proto GitHub Actions workflow pro CI build).
 - 4/4 testů v `core` prochází: 21 kHz tón, 1 kHz tón, WAV hlavička, 72 BPM.
 
-### 3.4 Otevřené TODO (až přijde zpětná vazba na v2)
+### 3.4 v3 (nepushnuto do samostatné verze, navazuje na v2, také ještě neotestováno)
+
+- Vibrometr přestal být samostatná obrazovka — sloučen přímo do hlavní
+  obrazovky (`MainActivity`): spektrum ultrazvuku a BPM se zobrazují a
+  logují souběžně, spouští/zastavuje je jedno tlačítko "Spustit analýzu".
+  Uživatel řekl, že samostatné zobrazení není potřeba.
+- Záznam o incidentu ultrazvuku v logu teď obsahuje i aktuální tep
+  (`... · Tep: NN BPM`) — na žádost uživatele, ať jde z logu rovnou vidět
+  souvislost mezi detekcí a tepem, ne jen čas + frekvenci zvlášť.
+- `HeartRateActivity`/`activity_heart_rate.xml` smazány, appka má teď jen
+  dvě obrazovky: hlavní (ultrazvuk + tep) a Log.
+
+### 3.5 Otevřené TODO (až přijde zpětná vazba na v2/v3)
 
 - Ověřit, jestli oprava crash bugu skutečně vyřešila "nejde nahrát WAV".
 - Podívat se do `ulzvu_log.txt` po prvním testu — hledat cokoliv na úrovni

@@ -25,11 +25,5 @@
             android:exported="false"
             android:label="@string/open_log"
             android:screenOrientation="portrait" />
-
-        <activity
-            android:name=".HeartRateActivity"
-            android:exported="false"
-            android:label="@string/open_heart_rate"
-            android:screenOrientation="portrait" />
     </application>
 </manifest>
