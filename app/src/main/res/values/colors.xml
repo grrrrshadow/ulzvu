@@ -1,0 +1,8 @@
+<resources>
+    <color name="background">#0F172A</color>
+    <color name="surface">#1E293B</color>
+    <color name="accent">#22D3EE</color>
+    <color name="ultrasound_alert">#F87171</color>
+    <color name="text_primary">#E2E8F0</color>
+    <color name="text_secondary">#94A3B8</color>
+</resources>

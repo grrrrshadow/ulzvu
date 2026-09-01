@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">Ulzvu</string>
+    <string name="start_analysis">Spustit analýzu</string>
+    <string name="stop_analysis">Zastavit analýzu</string>
+    <string name="start_recording">Nahrát WAV</string>
+    <string name="stop_recording">Zastavit nahrávání</string>
+    <string name="status_idle">Ticho</string>
+    <string name="permission_denied">Bez přístupu k mikrofonu appka nic nezmůže.</string>
+    <string name="probe_failed">Telefon nedovolil inicializovat žádný audio vstup.</string>
+    <string name="config_format">Vzorkování: %1$d Hz · Zdroj: %2$s · Nyquist: %3$d Hz</string>
+    <string name="peak_format">Špička: %1$.0f Hz @ %2$.1f dB</string>
+    <string name="ultrasound_detected_format">ULTRAZVUK: %1$.0f Hz @ %2$.1f dB</string>
+    <string name="recording_in_progress">Nahrávám…</string>
+    <string name="recording_failed">Nahrávání se nepodařilo uložit.</string>
+    <string name="saved_format">Uloženo: Stažené soubory/Ulzvu/%1$s</string>
+</resources>
