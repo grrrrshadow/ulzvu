@@ -128,22 +128,14 @@
             android:text="@string/start_analysis" />
 
         <Button
-            android:id="@+id/btnToggleRecording"
+            android:id="@+id/btnSaveRewind"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="8dp"
-            android:text="@string/start_recording"
+            android:text="@string/rewind_button"
             android:enabled="false" />
     </LinearLayout>
-
-    <Button
-        android:id="@+id/btnSaveRewind"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/rewind_button"
-        android:enabled="false" />
 
     <TextView
         android:id="@+id/tvStatus"

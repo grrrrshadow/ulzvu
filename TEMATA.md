@@ -99,10 +99,15 @@ Vedlejší větev: vibrometr na tep srdce (přes akcelerometr, ne mikrofon).
 - Poslední incident ultrazvuku je připíchnutý ve zvláštním řádku (červeně,
   tučně) nad běžným výpisem logu, aby nezmizel pod novějšími řádky.
 - **Kruhový buffer posledních 30 s** (`REWIND_BUFFER_SECONDS` v
-  `MainActivity.kt`) — běží pořád na pozadí, dokud je analýza spuštěná,
-  nezávisle na tlačítku "Nahrát WAV". Tlačítko "Uložit posledních 30 s"
-  ho zpětně uloží jako WAV do Downloads/Ulzvu — řeší situaci, kdy si
-  uživatel něčeho všimne až POTÉ, co to proběhlo.
+  `MainActivity.kt`) — běží pořád na pozadí, dokud je analýza spuštěná.
+  Řeší situaci, kdy si uživatel něčeho všimne až POTÉ, co to proběhlo.
+- Zjednodušeno na jedno tlačítko: původní samostatné "Nahrát WAV"
+  (dopředné nahrávání) i samostatné "Uložit posledních 30 s" zrušeny,
+  nahrazeny jedním tlačítkem **"Uložit 30 s (zvuk + log)"** —
+  `saveRewindBundle()` uloží zvukový kruhový buffer i posledních 30 s
+  logu (i INFO úroveň, ne jen to, co jde do `ulzvu_log.txt`) jako dvojici
+  spárovaných souborů se stejným časovým razítkem: `zvuk_<datum>.wav` +
+  `log_<datum>.txt` do Downloads/Ulzvu.
 
 ### 3.6 Otevřené TODO (až přijde zpětná vazba na v2/v3)
 

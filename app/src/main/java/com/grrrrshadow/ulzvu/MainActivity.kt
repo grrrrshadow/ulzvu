@@ -24,9 +24,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.grrrrshadow.ulzvu.core.SpectrumAnalyzer
 import com.grrrrshadow.ulzvu.core.WavHeader
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.text.SimpleDateFormat
@@ -69,7 +66,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var tvStatus: TextView
     private lateinit var spectrumView: SpectrumView
     private lateinit var btnToggleAnalysis: Button
-    private lateinit var btnToggleRecording: Button
     private lateinit var btnSaveRewind: Button
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -84,14 +80,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var analysisThread: Thread? = null
     @Volatile private var running = false
 
-    @Volatile private var recording = false
-    private val recordingLock = Any()
-    private var pcmCacheFile: File? = null
-    private var pcmOut: FileOutputStream? = null
-
     // rolling buffer of the last REWIND_BUFFER_SECONDS of audio -- always filling while
-    // analysis runs, independent of the forward "Nahrát WAV" toggle, so a button press can
-    // grab what already happened instead of only what comes after you notice something
+    // analysis runs, so "Uložit 30 s" can grab what already happened instead of only
+    // being able to record forward from the moment you press a button
     private var rewindBuffer: ShortArray? = null
     private var rewindWritePos = 0
     private var rewindFilledCount = 0
@@ -128,7 +119,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         tvStatus = findViewById(R.id.tvStatus)
         spectrumView = findViewById(R.id.spectrumView)
         btnToggleAnalysis = findViewById(R.id.btnToggleAnalysis)
-        btnToggleRecording = findViewById(R.id.btnToggleRecording)
         btnSaveRewind = findViewById(R.id.btnSaveRewind)
 
         tvDeviceInfo.text =
@@ -145,10 +135,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnToggleAnalysis.setOnClickListener {
             if (running) stopAnalysis() else requestPermissionAndStart()
         }
-        btnToggleRecording.setOnClickListener {
-            if (recording) stopRecording() else startRecording()
-        }
-        btnSaveRewind.setOnClickListener { saveRewindBuffer() }
+        btnSaveRewind.setOnClickListener { saveRewindBundle() }
         findViewById<Button>(R.id.btnOpenLog).setOnClickListener {
             startActivity(Intent(this, LogActivity::class.java))
         }
@@ -228,7 +215,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         running = true
         record.startRecording()
         btnToggleAnalysis.text = getString(R.string.stop_analysis)
-        btnToggleRecording.isEnabled = true
         btnSaveRewind.isEnabled = true
         tvStatus.text = ""
 
@@ -263,7 +249,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             }
             if (!running || offset < buffer.size) continue
 
-            if (recording) writePcmChunk(buffer)
             writeToRewindBuffer(buffer)
 
             analyzer.analyze(buffer, db)
@@ -335,7 +320,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun stopAnalysis() {
         running = false
-        if (recording) stopRecording()
         analysisThread?.join(500)
         analysisThread = null
         try {
@@ -348,115 +332,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
         audioRecord = null
         btnToggleAnalysis.text = getString(R.string.start_analysis)
-        btnToggleRecording.isEnabled = false
         btnSaveRewind.isEnabled = false
         synchronized(rewindLock) { rewindBuffer = null }
         EventLog.log(LogLevel.INFO, "Audio", "Analýza zastavena")
 
         stopHeartRate()
         updateRecentLogView()
-    }
-
-    private fun startRecording() {
-        synchronized(recordingLock) {
-            try {
-                pcmCacheFile = File(cacheDir, "ulzvu_tmp.pcm")
-                pcmOut = FileOutputStream(pcmCacheFile)
-            } catch (e: IOException) {
-                EventLog.log(LogLevel.ERROR, "Recording", "Nelze otevřít dočasný PCM soubor", e)
-                tvStatus.text = getString(R.string.recording_failed)
-                updateRecentLogView()
-                return
-            }
-        }
-        recording = true
-        btnToggleRecording.text = getString(R.string.stop_recording)
-        tvStatus.text = getString(R.string.recording_in_progress)
-        EventLog.log(LogLevel.INFO, "Recording", "Nahrávání spuštěno")
-        updateRecentLogView()
-    }
-
-    private fun writePcmChunk(samples: ShortArray) {
-        synchronized(recordingLock) {
-            val out = pcmOut ?: return
-            try {
-                val bytes = ByteBuffer.allocate(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
-                samples.forEach { bytes.putShort(it) }
-                out.write(bytes.array())
-            } catch (e: IOException) {
-                EventLog.log(LogLevel.ERROR, "Recording", "Zápis PCM chunku selhal", e)
-            }
-        }
-    }
-
-    private fun stopRecording() {
-        recording = false
-        btnToggleRecording.text = getString(R.string.start_recording)
-
-        synchronized(recordingLock) {
-            try {
-                pcmOut?.flush()
-                pcmOut?.close()
-            } catch (e: IOException) {
-                EventLog.log(LogLevel.ERROR, "Recording", "Chyba při zavírání PCM souboru", e)
-            }
-            pcmOut = null
-        }
-
-        val cfg = config
-        val cacheFile = pcmCacheFile
-        if (cfg == null || cacheFile == null || !cacheFile.exists() || cacheFile.length() == 0L) {
-            tvStatus.text = getString(R.string.recording_failed)
-            EventLog.log(LogLevel.ERROR, "Recording", "Dočasný PCM soubor chybí nebo je prázdný")
-            updateRecentLogView()
-            return
-        }
-
-        val savedName = saveWavToDownloads(cacheFile, cfg.sampleRateHz)
-        cacheFile.delete()
-        pcmCacheFile = null
-
-        tvStatus.text = if (savedName != null) {
-            getString(R.string.saved_format, savedName)
-        } else {
-            getString(R.string.recording_failed)
-        }
-        updateRecentLogView()
-    }
-
-    private fun saveWavToDownloads(pcmFile: File, sampleRateHz: Int): String? {
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val displayName = "ulzvu_$timestamp.wav"
-
-        return try {
-            val values = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, displayName)
-                put(MediaStore.Downloads.MIME_TYPE, "audio/wav")
-                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Ulzvu")
-            }
-
-            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            if (uri == null) {
-                EventLog.log(LogLevel.ERROR, "Recording", "MediaStore.insert vrátil null pro $displayName")
-                return null
-            }
-
-            val stream = contentResolver.openOutputStream(uri)
-            if (stream == null) {
-                EventLog.log(LogLevel.ERROR, "Recording", "openOutputStream vrátil null pro $uri")
-                return null
-            }
-            stream.use { out ->
-                val header = WavHeader.build(sampleRateHz, pcmFile.length().toInt())
-                out.write(header)
-                pcmFile.inputStream().use { it.copyTo(out) }
-            }
-            EventLog.log(LogLevel.INFO, "Recording", "Uloženo $displayName (${pcmFile.length()} B PCM)")
-            displayName
-        } catch (e: Exception) {
-            EventLog.log(LogLevel.ERROR, "Recording", "Uložení WAV selhalo", e)
-            null
-        }
     }
 
     private fun writeToRewindBuffer(samples: ShortArray) {
@@ -470,7 +351,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    private fun saveRewindBuffer() {
+    /** One tap saves both the last REWIND_BUFFER_SECONDS of audio and the log entries from
+     * that same window, as a matched pair of files sharing one timestamp. */
+    private fun saveRewindBundle() {
         val cfg = config
         if (cfg == null) {
             tvStatus.text = getString(R.string.rewind_failed)
@@ -499,18 +382,23 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             return
         }
 
-        val savedName = saveRewindToDownloads(linear, cfg.sampleRateHz)
-        tvStatus.text = if (savedName != null) {
-            getString(R.string.saved_format, savedName)
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val audioName = saveRewindAudioToDownloads(linear, cfg.sampleRateHz, timestamp)
+
+        val cutoffMs = System.currentTimeMillis() - REWIND_BUFFER_SECONDS * 1000L
+        val logLines = EventLog.snapshot().filter { it.timestampMs >= cutoffMs }.map { EventLog.format(it) }
+        val logName = saveLogSliceToDownloads(logLines, timestamp)
+
+        tvStatus.text = if (audioName != null && logName != null) {
+            getString(R.string.saved_pair_format, audioName, logName)
         } else {
             getString(R.string.rewind_failed)
         }
         updateRecentLogView()
     }
 
-    private fun saveRewindToDownloads(samples: ShortArray, sampleRateHz: Int): String? {
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val displayName = "ulzvu_zpetne_$timestamp.wav"
+    private fun saveRewindAudioToDownloads(samples: ShortArray, sampleRateHz: Int, timestamp: String): String? {
+        val displayName = "zvuk_$timestamp.wav"
 
         return try {
             val values = ContentValues().apply {
@@ -537,10 +425,38 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 out.write(WavHeader.build(sampleRateHz, pcmBytes.size))
                 out.write(pcmBytes)
             }
-            EventLog.log(LogLevel.INFO, "Rewind", "Uloženo $displayName (${samples.size} vzorků zpětně)")
             displayName
         } catch (e: Exception) {
             EventLog.log(LogLevel.ERROR, "Rewind", "Zpětné uložení WAV selhalo", e)
+            null
+        }
+    }
+
+    private fun saveLogSliceToDownloads(lines: List<String>, timestamp: String): String? {
+        val displayName = "log_$timestamp.txt"
+
+        return try {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, displayName)
+                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Ulzvu")
+            }
+
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri == null) {
+                EventLog.log(LogLevel.ERROR, "Rewind", "MediaStore.insert vrátil null pro $displayName")
+                return null
+            }
+
+            val stream = contentResolver.openOutputStream(uri)
+            if (stream == null) {
+                EventLog.log(LogLevel.ERROR, "Rewind", "openOutputStream vrátil null pro $uri")
+                return null
+            }
+            stream.use { out -> out.write(lines.joinToString("\n").toByteArray()) }
+            displayName
+        } catch (e: Exception) {
+            EventLog.log(LogLevel.ERROR, "Rewind", "Uložení výřezu logu selhalo", e)
             null
         }
     }
