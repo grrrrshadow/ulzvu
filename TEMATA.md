@@ -109,7 +109,37 @@ Vedlejší větev: vibrometr na tep srdce (přes akcelerometr, ne mikrofon).
   spárovaných souborů se stejným časovým razítkem: `zvuk_<datum>.wav` +
   `log_<datum>.txt` do Downloads/Ulzvu.
 
-### 3.6 Otevřené TODO (až přijde zpětná vazba na v2/v3)
+### 3.6 v4 — foreground service (nejdůležitější architektonická oprava)
+
+Uživatel zjistil zásadní bug: appka nenahrávala na pozadí. Android po pár
+vteřinách odebere přístup k mikrofonu obyčejnému vlákcu v appce, která
+není ve foregroundu — to je tvrdé systémové omezení (Android 9/10+),
+ne nastavení baterie/úspory energie. Kruhový buffer běžel dál, ale plnil
+se tichem, dokud appku znovu neotevřeli — proto bylo slyšet jen posledních
+pár vteřin nahrávky.
+
+**Oprava:** veškerá logika záznamu (`AudioRecord`, analýza, detekce,
+akcelerometr/tep, kruhový buffer, ukládání) přesunuta z `MainActivity` do
+nové **`UlzvuService`** — foreground service s `android:foregroundServiceType
+="microphone"` (povinné od Android 14/API 34, náš `targetSdk`). Appka:
+- Manifest: přidána oprávnění `FOREGROUND_SERVICE`,
+  `FOREGROUND_SERVICE_MICROPHONE`, `POST_NOTIFICATIONS`.
+- `MainActivity` je teď jen tenká UI vrstva — v `onStart()`/`onStop()` se
+  váže/odvazuje na service (`bindService`/`unbindService`), zatímco je
+  appka viditelná pollingem (200 ms) čte publikovaný stav service a
+  aktualizuje views. Service běží dál nezávisle na vazbě, dokud ji
+  uživatel nezastaví tlačítkem "Zastavit analýzu" (`stopCapture()`).
+- Notifikace (`NotificationChannel` IMPORTANCE_LOW, beze zvuku) — povinná
+  součást foreground service, appka ji ukazuje, dokud běží nahrávání.
+- Vedlejší oprava na stejné hlášení: doba trvání incidentu byla v ms
+  ("trval 1230 ms"), uživatel chtěl vteřiny na 2 desetinná místa
+  ("trval 1.23 s") — milisekundy prý nikdo neumí odhadnout.
+
+**Netestováno** — čeká na vyzkoušení na Oppu (vypnout appku z popředí,
+počkat, otevřít, zmáčknout Uložit, zkontrolovat že zvuk pokrývá celých
+30 s, ne jen pár vteřin od návratu do appky).
+
+### 3.7 Otevřené TODO (až přijde zpětná vazba na v2/v3/v4)
 
 - Ověřit, jestli oprava crash bugu skutečně vyřešila "nejde nahrát WAV".
 - Podívat se do `ulzvu_log.txt` po prvním testu — hledat cokoliv na úrovni
