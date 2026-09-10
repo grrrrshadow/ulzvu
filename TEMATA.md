@@ -209,21 +209,34 @@ do `AndroidManifest.xml` — appka teď smí zjistit, že My Noise existuje.
     (některé appky si to zakazují), a jestli MediaProjection přežije
     přechod appky na pozadí stejně spolehlivě jako mikrofon.
 
-### 3.9 Otevřené TODO (až přijde zpětná vazba na v2–v5)
+### 3.9 Stav k 2026-09-10: v5 (+ opravy 3.7b/3.7c) potvrzeno funkční na Oppu
 
-- Ověřit, jestli oprava crash bugu skutečně vyřešila "nejde nahrát WAV".
-- Podívat se do `ulzvu_log.txt` po prvním testu — hledat cokoliv na úrovni
-  ERROR, hlavně kolem nahrávání a AudioRecord.
-- Doladit `MOTION_STDDEV_THRESHOLD` u vibrometru podle reálného chování na
-  Oppu (moc citlivé / málo citlivé na "Pohyb ruší měření").
-- Až bude Motorola z servisu, otestovat probing (jestli dostane vyšší
-  vzorkování než Oppo — střední třída má šanci na 96 kHz, kde Oppo možná
-  spadne na 48 kHz).
+Celý řetězec otestován naostro na Oppo A18 a funguje: analýza běží i na
+pozadí (foreground service), "Uložit 30 s" ukládá zvuk+log, záznam z My
+Noise taky funguje po opravě package visibility. Crash bug (dva
+foreground service typy v jedné service) i "My Noise není nainstalovaná"
+(package visibility) — oba vyřešené a potvrzené uživatelem.
+
+**Rozhodnutí uživatele:** kvalitu/výkon záznamu (vyšší vzorkování,
+případně jiné parametry bufferů) zatím neřešit — Oppo A18 má jen 4 GB
+RAM, takže na to počkáme, až bude k dispozici Motorola Edge 60 Fusion
+(z servisu, Android 15, střední třída → šance na vyšší vzorkování bez
+tlaku na paměť).
+
+### 3.10 Otevřené TODO
+
+- Až bude Motorola z servisu: porovnat probing (vyšší vzorkování než
+  Oppo?) a případně zlepšit kvalitu/parametry záznamu — teď to necháváme
+  být kvůli 4 GB RAM na Oppu.
+- Doladit `MOTION_STDDEV_THRESHOLD` u vibrometru podle reálného chování
+  (moc citlivé / málo citlivé na "Pohyb ruší měření") — zatím nezpětná
+  vazba.
 - Zúžit detekční filtr podle 4.4 (úzkopásmový + perzistentní tón místo
-  širokopásmového prahu), až bude čas — teď potvrzeno reálným testem
-  (sykavky v řeči), že široký práh dává falešné poplachy.
-- Ověřit, jestli My Noise capture skutečně funguje (appka ji nezakazuje)
-  a jestli MediaProjection vydrží přechod na pozadí.
+  širokopásmového prahu) — potvrzeno reálným testem (sykavky v řeči), že
+  široký práh dává falešné poplachy. Zatím neimplementováno.
+- Ověřit, jestli MediaProjection (My Noise záznam) vydrží přechod appky
+  na pozadí stejně spolehlivě jako mikrofon (FGS typ "microphone") —
+  netestováno explicitně, jen že capture jde spustit a jde uložit.
 
 ## 4. Cílová technologie: parametrické ultrazvukové směrové reproduktory
 
