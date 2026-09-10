@@ -139,7 +139,35 @@ nové **`UlzvuService`** — foreground service s `android:foregroundServiceType
 počkat, otevřít, zmáčknout Uložit, zkontrolovat že zvuk pokrývá celých
 30 s, ne jen pár vteřin od návratu do appky).
 
-### 3.7 Otevřené TODO (až přijde zpětná vazba na v2/v3/v4)
+### 3.8 v5 — potvrzení uložení + samostatný záznam z My Noise
+
+- Tlačítko "Uložit 30 s" teď hned po zmáčknutí ukáže na sobě "Ukládám…"
+  a po dokončení "Uloženo ✓" na 5 vteřin — uživatel si nebyl jistý, jestli
+  se klik zaregistroval.
+- Nový nezávislý druhý zvukový záznam: co hraje appka **My Noise**
+  (`com.mynoise.mynoise`, verze 3.21.77 z Google Play) do sluchátek —
+  cíleně jen ta appka, přes Android `AudioPlaybackCaptureConfiguration`
+  + `addMatchingUid()` (zjištěné přes `PackageManager`), ne obecně
+  všechno na telefonu.
+  - Vyžaduje `MediaProjection` souhlas (Android nemá zvlášť "jen zvuk"
+    variantu — jde přes dialog vypadající jako "nahrávání obrazovky"),
+    znovu při každém zapnutí přes tlačítko "Zapnout záznam My Noise".
+  - Manifest: `FOREGROUND_SERVICE_MEDIA_PROJECTION` navíc,
+    `foregroundServiceType="microphone|mediaProjection"`.
+  - Vlastní 30s kruhový buffer nezávislý na mikrofonu, pevně 48 kHz
+    (výstup přehrávání, ne test ultrazvuku — nemá smysl řešit vyšší
+    vzorkování jako u mikrofonu).
+  - "Uložit 30 s" teď uloží až tři soubory se stejným razítkem:
+    `zvuk_<datum>.wav` (mikrofon) + `mynoise_<datum>.wav` (jen když je
+    zapnuto) + `log_<datum>.txt`.
+  - Pokud My Noise není nainstalovaná nebo capture selže, appka to
+    krátce ukáže ve stavovém řádku (`consumePlaybackError()`), ne jen
+    do logu.
+  - **Netestováno** — zejména jestli My Noise capture vůbec nezablokuje
+    (některé appky si to zakazují), a jestli MediaProjection přežije
+    přechod appky na pozadí stejně spolehlivě jako mikrofon.
+
+### 3.9 Otevřené TODO (až přijde zpětná vazba na v2–v5)
 
 - Ověřit, jestli oprava crash bugu skutečně vyřešila "nejde nahrát WAV".
 - Podívat se do `ulzvu_log.txt` po prvním testu — hledat cokoliv na úrovni
@@ -152,6 +180,8 @@ počkat, otevřít, zmáčknout Uložit, zkontrolovat že zvuk pokrývá celých
 - Zúžit detekční filtr podle 4.4 (úzkopásmový + perzistentní tón místo
   širokopásmového prahu), až bude čas — teď potvrzeno reálným testem
   (sykavky v řeči), že široký práh dává falešné poplachy.
+- Ověřit, jestli My Noise capture skutečně funguje (appka ji nezakazuje)
+  a jestli MediaProjection vydrží přechod na pozadí.
 
 ## 4. Cílová technologie: parametrické ultrazvukové směrové reproduktory
 

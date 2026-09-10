@@ -137,6 +137,14 @@
             android:enabled="false" />
     </LinearLayout>
 
+    <Button
+        android:id="@+id/btnToggleMynoise"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/mynoise_button_start"
+        android:enabled="false" />
+
     <TextView
         android:id="@+id/tvStatus"
         android:layout_width="match_parent"

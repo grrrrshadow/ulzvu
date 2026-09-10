@@ -10,10 +10,16 @@
     <string name="ultrasound_detected_format">ULTRAZVUK: %1$.0f Hz @ %2$.1f dB</string>
     <string name="saved_format">Uloženo: Stažené soubory/Ulzvu/%1$s</string>
     <string name="saved_pair_format">Uloženo: Ulzvu/%1$s + %2$s</string>
+    <string name="saved_triple_format">Uloženo: Ulzvu/%1$s + %2$s + %3$s</string>
     <string name="rewind_button">Uložit 30 s (zvuk + log)</string>
     <string name="rewind_saving">Ukládám…</string>
     <string name="rewind_saved">Uloženo ✓</string>
     <string name="rewind_failed">Zpětné uložení se nepodařilo — podrobnosti v logu.</string>
+
+    <string name="mynoise_button_start">Zapnout záznam My Noise</string>
+    <string name="mynoise_button_stop">Vypnout záznam My Noise</string>
+    <string name="mynoise_not_installed">My Noise není na telefonu nainstalovaná.</string>
+    <string name="mynoise_capture_failed">Záznam My Noise se nepodařilo spustit — podrobnosti v logu.</string>
 
     <string name="open_log">Log</string>
     <string name="log_hint">Chyby a incidenty (start/konec detekce) se ukládají do Stažené soubory/Ulzvu/ulzvu_log.txt. Běžné info hlášky (stav tepu, konfigurace) se ukládají jen do zobrazení tady v appce, ne do souboru.</string>

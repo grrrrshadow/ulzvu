@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -39,10 +40,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var spectrumView: SpectrumView
     private lateinit var btnToggleAnalysis: Button
     private lateinit var btnSaveRewind: Button
+    private lateinit var btnToggleMynoise: Button
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var service: UlzvuService? = null
     private var bound = false
+    private lateinit var mediaProjectionManager: MediaProjectionManager
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -51,6 +54,18 @@ class MainActivity : AppCompatActivity() {
             startService()
         } else {
             tvStatus.text = getString(R.string.permission_denied)
+        }
+    }
+
+    // My Noise capture rides on the screen-capture consent flow -- Android has no
+    // audio-only variant of this permission. A fresh grant is needed each time it's enabled.
+    private val mediaProjectionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data
+        if (result.resultCode == RESULT_OK && data != null) {
+            val projection = mediaProjectionManager.getMediaProjection(result.resultCode, data)
+            service?.enablePlaybackCapture(projection)
         }
     }
 
@@ -94,6 +109,9 @@ class MainActivity : AppCompatActivity() {
         spectrumView = findViewById(R.id.spectrumView)
         btnToggleAnalysis = findViewById(R.id.btnToggleAnalysis)
         btnSaveRewind = findViewById(R.id.btnSaveRewind)
+        btnToggleMynoise = findViewById(R.id.btnToggleMynoise)
+
+        mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
 
         tvDeviceInfo.text =
             "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
@@ -109,6 +127,13 @@ class MainActivity : AppCompatActivity() {
             btnSaveRewind.text = getString(R.string.rewind_saving)
             mainHandler.removeCallbacks(revertSaveButtonRunnable)
             service?.requestSaveRewindBundle()
+        }
+        btnToggleMynoise.setOnClickListener {
+            if (service?.playbackCaptureActive == true) {
+                service?.disablePlaybackCapture()
+            } else {
+                mediaProjectionLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+            }
         }
         findViewById<Button>(R.id.btnOpenLog).setOnClickListener {
             startActivity(Intent(this, LogActivity::class.java))
@@ -170,6 +195,10 @@ class MainActivity : AppCompatActivity() {
 
         btnToggleAnalysis.text = getString(if (s.running) R.string.stop_analysis else R.string.start_analysis)
         btnSaveRewind.isEnabled = s.running
+        btnToggleMynoise.isEnabled = s.running
+        btnToggleMynoise.text = getString(
+            if (s.playbackCaptureActive) R.string.mynoise_button_stop else R.string.mynoise_button_start
+        )
         if (s.configText.isNotEmpty()) tvConfigInfo.text = s.configText
 
         val db = s.latestSpectrumDb
@@ -197,6 +226,9 @@ class MainActivity : AppCompatActivity() {
             mainHandler.removeCallbacks(revertSaveButtonRunnable)
             mainHandler.postDelayed(revertSaveButtonRunnable, 5000L)
         }
+
+        val playbackError = s.consumePlaybackError()
+        if (playbackError != null) tvStatus.text = playbackError
 
         updateRecentLogView()
     }
