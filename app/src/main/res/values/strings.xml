@@ -11,6 +11,8 @@
     <string name="saved_format">Uloženo: Stažené soubory/Ulzvu/%1$s</string>
     <string name="saved_pair_format">Uloženo: Ulzvu/%1$s + %2$s</string>
     <string name="rewind_button">Uložit 30 s (zvuk + log)</string>
+    <string name="rewind_saving">Ukládám…</string>
+    <string name="rewind_saved">Uloženo ✓</string>
     <string name="rewind_failed">Zpětné uložení se nepodařilo — podrobnosti v logu.</string>
 
     <string name="open_log">Log</string>

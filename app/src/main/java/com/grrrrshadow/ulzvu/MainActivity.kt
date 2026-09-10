@@ -73,6 +73,7 @@ class MainActivity : AppCompatActivity() {
             if (bound) mainHandler.postDelayed(this, UI_POLL_INTERVAL_MS)
         }
     }
+    private val revertSaveButtonRunnable = Runnable { btnSaveRewind.text = getString(R.string.rewind_button) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,7 +105,11 @@ class MainActivity : AppCompatActivity() {
                 requestPermissionsAndStart()
             }
         }
-        btnSaveRewind.setOnClickListener { service?.requestSaveRewindBundle() }
+        btnSaveRewind.setOnClickListener {
+            btnSaveRewind.text = getString(R.string.rewind_saving)
+            mainHandler.removeCallbacks(revertSaveButtonRunnable)
+            service?.requestSaveRewindBundle()
+        }
         findViewById<Button>(R.id.btnOpenLog).setOnClickListener {
             startActivity(Intent(this, LogActivity::class.java))
         }
@@ -121,6 +126,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
         mainHandler.removeCallbacks(pollRunnable)
+        mainHandler.removeCallbacks(revertSaveButtonRunnable)
         if (bound) {
             unbindService(connection)
             bound = false
@@ -185,7 +191,12 @@ class MainActivity : AppCompatActivity() {
         tvMotionWarning.visibility = if (s.motionWarningActive) View.VISIBLE else View.INVISIBLE
 
         val saveStatus = s.consumeSaveStatus()
-        if (saveStatus != null) tvStatus.text = saveStatus
+        if (saveStatus != null) {
+            tvStatus.text = saveStatus
+            btnSaveRewind.text = getString(R.string.rewind_saved)
+            mainHandler.removeCallbacks(revertSaveButtonRunnable)
+            mainHandler.postDelayed(revertSaveButtonRunnable, 5000L)
+        }
 
         updateRecentLogView()
     }
