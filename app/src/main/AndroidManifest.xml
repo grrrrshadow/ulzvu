@@ -7,6 +7,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Android 11+ package visibility: without this, PackageManager.getApplicationInfo()
+         for another app returns "not found" even when it IS installed, unless we
+         explicitly declare that we look for it. -->
+    <queries>
+        <package android:name="com.mynoise.mynoise" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@drawable/ic_launcher"

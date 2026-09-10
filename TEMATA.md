@@ -164,8 +164,22 @@ spadl s `SecurityException`.
   (pokud běží) a pošle ho do `UlzvuService.requestSaveRewindBundle(...)`,
   která dál dělá všechny tři soubory jako doteď.
 
-**Netestováno** — tohle je oprava bez možnosti to tady zkompilovat, čeká
-na další pokus na Oppu.
+**Potvrzeno funkční** — analýza po opravě běžela v pořádku (spadala jen
+kvůli 3.7b, teď ne).
+
+### 3.7c Oprava — "My Noise není nainstalovaná" i když je
+
+Po 3.7b appka běžela, ale záznam z My Noise hlásil, že appka není
+nainstalovaná, i když ji uživatel měl (verze 3.21.77). Příčina: od
+Androidu 11 (API 30) platí **omezení viditelnosti balíčků** (package
+visibility) — appka bez explicitního povolení v manifestu nevidí
+existenci jiných appek přes `PackageManager.getApplicationInfo()`, i
+když jsou reálně nainstalované. Náš `targetSdk 34` tomu plně podléhá.
+
+**Oprava:** přidán `<queries><package android:name="com.mynoise.mynoise" /></queries>`
+do `AndroidManifest.xml` — appka teď smí zjistit, že My Noise existuje.
+
+**Netestováno** — čeká na další pokus.
 
 ### 3.8 v5 — potvrzení uložení + samostatný záznam z My Noise
 
