@@ -36,4 +36,5 @@
 
     <string name="notification_channel_name">Ulzvu běží</string>
     <string name="notification_text">Nahrávání a měření tepu běží na pozadí</string>
+    <string name="mynoise_notification_text">Záznam zvuku z My Noise běží na pozadí</string>
 </resources>

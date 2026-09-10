@@ -22,9 +22,11 @@ import androidx.core.content.ContextCompat
 private const val UI_POLL_INTERVAL_MS = 200L
 
 /**
- * Thin UI shell: all capture (mic, spectrum, detection, heart rate, rewind buffer) lives in
- * UlzvuService so it keeps running when this Activity isn't visible. This just binds to the
- * service while on screen and polls its published state to refresh the views.
+ * Thin UI shell: mic/spectrum/detection/heart-rate/rewind-buffer capture lives in
+ * UlzvuService, and My Noise playback capture lives in the separate PlaybackCaptureService
+ * (kept apart because Android requires MediaProjection consent to exist before a
+ * "mediaProjection"-typed service can even start -- see PlaybackCaptureService's doc comment).
+ * This Activity binds to both while visible and polls their published state to refresh the UI.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -45,6 +47,8 @@ class MainActivity : AppCompatActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var service: UlzvuService? = null
     private var bound = false
+    private var playbackService: PlaybackCaptureService? = null
+    private var playbackBound = false
     private lateinit var mediaProjectionManager: MediaProjectionManager
 
     private val permissionLauncher = registerForActivityResult(
@@ -59,13 +63,18 @@ class MainActivity : AppCompatActivity() {
 
     // My Noise capture rides on the screen-capture consent flow -- Android has no
     // audio-only variant of this permission. A fresh grant is needed each time it's enabled.
+    // The (resultCode, data) pair travels to PlaybackCaptureService via Intent extras, since
+    // that service must call getMediaProjection() itself, after its own startForeground().
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val data = result.data
         if (result.resultCode == RESULT_OK && data != null) {
-            val projection = mediaProjectionManager.getMediaProjection(result.resultCode, data)
-            service?.enablePlaybackCapture(projection)
+            val intent = Intent(this, PlaybackCaptureService::class.java).apply {
+                putExtra(EXTRA_PROJECTION_RESULT_CODE, result.resultCode)
+                putExtra(EXTRA_PROJECTION_RESULT_DATA, data)
+            }
+            ContextCompat.startForegroundService(this, intent)
         }
     }
 
@@ -79,6 +88,18 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceDisconnected(name: ComponentName?) {
             service = null
             bound = false
+        }
+    }
+
+    private val playbackConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            playbackService = (binder as PlaybackCaptureService.LocalBinder).getService()
+            playbackBound = true
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            playbackService = null
+            playbackBound = false
         }
     }
 
@@ -126,11 +147,12 @@ class MainActivity : AppCompatActivity() {
         btnSaveRewind.setOnClickListener {
             btnSaveRewind.text = getString(R.string.rewind_saving)
             mainHandler.removeCallbacks(revertSaveButtonRunnable)
-            service?.requestSaveRewindBundle()
+            val playbackSamples = playbackService?.takeIf { it.playbackCaptureActive }?.extractCurrentBuffer()
+            service?.requestSaveRewindBundle(playbackSamples)
         }
         btnToggleMynoise.setOnClickListener {
-            if (service?.playbackCaptureActive == true) {
-                service?.disablePlaybackCapture()
+            if (playbackService?.playbackCaptureActive == true) {
+                playbackService?.disableCapture()
             } else {
                 mediaProjectionLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
             }
@@ -146,6 +168,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         bindService(Intent(this, UlzvuService::class.java), connection, Context.BIND_AUTO_CREATE)
+        bindService(Intent(this, PlaybackCaptureService::class.java), playbackConnection, Context.BIND_AUTO_CREATE)
     }
 
     override fun onStop() {
@@ -155,6 +178,10 @@ class MainActivity : AppCompatActivity() {
         if (bound) {
             unbindService(connection)
             bound = false
+        }
+        if (playbackBound) {
+            unbindService(playbackConnection)
+            playbackBound = false
         }
     }
 
@@ -196,8 +223,9 @@ class MainActivity : AppCompatActivity() {
         btnToggleAnalysis.text = getString(if (s.running) R.string.stop_analysis else R.string.start_analysis)
         btnSaveRewind.isEnabled = s.running
         btnToggleMynoise.isEnabled = s.running
+        val playbackActive = playbackService?.playbackCaptureActive == true
         btnToggleMynoise.text = getString(
-            if (s.playbackCaptureActive) R.string.mynoise_button_stop else R.string.mynoise_button_start
+            if (playbackActive) R.string.mynoise_button_stop else R.string.mynoise_button_start
         )
         if (s.configText.isNotEmpty()) tvConfigInfo.text = s.configText
 
@@ -227,7 +255,7 @@ class MainActivity : AppCompatActivity() {
             mainHandler.postDelayed(revertSaveButtonRunnable, 5000L)
         }
 
-        val playbackError = s.consumePlaybackError()
+        val playbackError = playbackService?.consumePlaybackError()
         if (playbackError != null) tvStatus.text = playbackError
 
         updateRecentLogView()

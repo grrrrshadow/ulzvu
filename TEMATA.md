@@ -139,6 +139,34 @@ nové **`UlzvuService`** — foreground service s `android:foregroundServiceType
 počkat, otevřít, zmáčknout Uložit, zkontrolovat že zvuk pokrývá celých
 30 s, ne jen pár vteřin od návratu do appky).
 
+### 3.7b Oprava pádu — appka spadla hned při "Spustit analýzu"
+
+Uživatel nahlásil, že appka po v5 (viz 3.8 níže) spadla IHNED při
+"Spustit analýzu", ještě předtím, než se vůbec dotkl My Noise. Příčina:
+`UlzvuService` měla v manifestu `foregroundServiceType="microphone|mediaProjection"`
+oba typy pohromadě. Android ale u `mediaProjection` typu vyžaduje, aby
+souhlas (`MediaProjectionManager.createScreenCaptureIntent()`) existoval
+**předtím**, než se foreground service s tímhle typem vůbec spustí — a
+appka `UlzvuService` startovala hned na "Spustit analýzu", kdy o žádný
+MediaProjection souhlas ještě nikdo nepožádal. `startForeground()` proto
+spadl s `SecurityException`.
+
+**Oprava:** rozděleno na dvě samostatné services:
+- `UlzvuService` — zpátky jen `foregroundServiceType="microphone"`,
+  žádná závislost na MediaProjection. Tohle je přesně to, co fungovalo
+  před přidáním My Noise.
+- Nová `PlaybackCaptureService` — jen `foregroundServiceType="mediaProjection"`,
+  startuje se výhradně přes Intent s `resultCode`/`data` z už získaného
+  souhlasu (`MainActivity` je pošle jako extras, service si teprve uvnitř
+  zavolá `getMediaProjection()` a až pak `startForeground()`).
+- `MainActivity` se teď váže na obě services zvlášť. Tlačítko "Uložit 30 s"
+  před uložením synchronně vytáhne aktuální buffer z `PlaybackCaptureService`
+  (pokud běží) a pošle ho do `UlzvuService.requestSaveRewindBundle(...)`,
+  která dál dělá všechny tři soubory jako doteď.
+
+**Netestováno** — tohle je oprava bez možnosti to tady zkompilovat, čeká
+na další pokus na Oppu.
+
 ### 3.8 v5 — potvrzení uložení + samostatný záznam z My Noise
 
 - Tlačítko "Uložit 30 s" teď hned po zmáčknutí ukáže na sobě "Ukládám…"

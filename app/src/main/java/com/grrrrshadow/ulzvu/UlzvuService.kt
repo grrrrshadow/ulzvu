@@ -7,15 +7,12 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.ContentValues
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.media.AudioFormat
-import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
-import android.media.projection.MediaProjection
 import android.os.Binder
 import android.os.Environment
 import android.os.Handler
@@ -51,15 +48,18 @@ private const val REWIND_BUFFER_SECONDS = 30
 private const val NOTIFICATION_CHANNEL_ID = "ulzvu_running"
 private const val NOTIFICATION_ID = 1
 
-private const val MYNOISE_PACKAGE = "com.mynoise.mynoise"
-private const val PLAYBACK_SAMPLE_RATE_HZ = 48000
-
 /**
  * Android revokes microphone access from a plain background thread within a few seconds of
  * the app losing foreground focus -- switching to another app silently stops AudioRecord.
  * Running the capture inside a foreground service (with the required Android 14 "microphone"
  * service type) keeps it alive regardless of what's on screen; MainActivity just binds to
  * this while visible to mirror its state into the UI.
+ *
+ * This service intentionally declares ONLY the "microphone" type -- My Noise playback
+ * capture lives in the separate PlaybackCaptureService, because Android requires a valid
+ * MediaProjection consent to already exist before a "mediaProjection"-typed service can even
+ * start; folding both types into one service made every plain "Spustit analýzu" press (no
+ * MediaProjection involved yet) crash with a SecurityException.
  */
 class UlzvuService : Service(), SensorEventListener {
 
@@ -92,10 +92,6 @@ class UlzvuService : Service(), SensorEventListener {
         private set
     @Volatile var lastSaveStatusText: String? = null
         private set
-    @Volatile var playbackCaptureActive: Boolean = false
-        private set
-    @Volatile var playbackCaptureErrorText: String? = null
-        private set
 
     private var config: AudioConfig? = null
     private var audioRecord: AudioRecord? = null
@@ -105,22 +101,6 @@ class UlzvuService : Service(), SensorEventListener {
     private var rewindWritePos = 0
     private var rewindFilledCount = 0
     private val rewindLock = Any()
-
-    // second, independent capture: what a specific app (My Noise) is playing to the
-    // headphones, via AudioPlaybackCapture -- a separate 30 s ring buffer so it can be
-    // compared against the room's mic pickup in the same saved bundle
-    private var mediaProjection: MediaProjection? = null
-    private var playbackAudioRecord: AudioRecord? = null
-    private var playbackThread: Thread? = null
-    private var playbackBuffer: ShortArray? = null
-    private var playbackWritePos = 0
-    private var playbackFilledCount = 0
-    private val playbackLock = Any()
-    private val projectionCallback = object : MediaProjection.Callback() {
-        override fun onStop() {
-            disablePlaybackCapture()
-        }
-    }
 
     private lateinit var sensorManager: SensorManager
     private var heartRateSensor: Sensor? = null
@@ -155,12 +135,6 @@ class UlzvuService : Service(), SensorEventListener {
     fun consumeSaveStatus(): String? {
         val s = lastSaveStatusText
         lastSaveStatusText = null
-        return s
-    }
-
-    fun consumePlaybackError(): String? {
-        val s = playbackCaptureErrorText
-        playbackCaptureErrorText = null
         return s
     }
 
@@ -260,7 +234,6 @@ class UlzvuService : Service(), SensorEventListener {
         EventLog.log(LogLevel.INFO, "Audio", "Analýza zastavena")
 
         stopHeartRate()
-        disablePlaybackCapture()
         stopSelfCleanly()
     }
 
@@ -357,28 +330,16 @@ class UlzvuService : Service(), SensorEventListener {
         }
     }
 
-    /** Copies the valid samples out of a ring buffer in chronological order (oldest first). */
-    private fun extractLinear(buffer: ShortArray?, writePos: Int, filledCount: Int): ShortArray? {
-        if (buffer == null || filledCount == 0) return null
-        val out = ShortArray(filledCount)
-        if (filledCount < buffer.size) {
-            System.arraycopy(buffer, 0, out, 0, filledCount)
-        } else {
-            val tail = buffer.size - writePos
-            System.arraycopy(buffer, writePos, out, 0, tail)
-            System.arraycopy(buffer, 0, out, tail, writePos)
-        }
-        return out
-    }
-
     /** One tap saves the last REWIND_BUFFER_SECONDS of mic audio, the same window of My Noise
-     * playback if that capture is on, and the log entries from that window -- a matched set
-     * sharing one timestamp. Runs on its own thread so a slow save can't jank the UI. */
-    fun requestSaveRewindBundle() {
-        thread(name = "ulzvu-save") { saveRewindBundle() }
+     * playback if `playbackSamples` was supplied (extracted by the caller from
+     * PlaybackCaptureService just before calling this), and the log entries from that window --
+     * a matched set sharing one timestamp. Runs on its own thread so a slow save can't jank
+     * the UI. */
+    fun requestSaveRewindBundle(playbackSamples: ShortArray?) {
+        thread(name = "ulzvu-save") { saveRewindBundle(playbackSamples) }
     }
 
-    private fun saveRewindBundle() {
+    private fun saveRewindBundle(playbackSamples: ShortArray?) {
         val cfg = config
         if (cfg == null) {
             lastSaveStatusText = getString(R.string.rewind_failed)
@@ -395,10 +356,7 @@ class UlzvuService : Service(), SensorEventListener {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val audioName = saveWavToDownloads(linear, cfg.sampleRateHz, "zvuk_$timestamp.wav", "Rewind")
 
-        val playbackLinear = if (playbackCaptureActive) {
-            synchronized(playbackLock) { extractLinear(playbackBuffer, playbackWritePos, playbackFilledCount) }
-        } else null
-        val playbackName = playbackLinear?.let {
+        val playbackName = playbackSamples?.let {
             saveWavToDownloads(it, PLAYBACK_SAMPLE_RATE_HZ, "mynoise_$timestamp.wav", "Playback")
         }
 
@@ -411,6 +369,20 @@ class UlzvuService : Service(), SensorEventListener {
             playbackName != null -> getString(R.string.saved_triple_format, audioName, playbackName, logName)
             else -> getString(R.string.saved_pair_format, audioName, logName)
         }
+    }
+
+    /** Copies the valid samples out of a ring buffer in chronological order (oldest first). */
+    private fun extractLinear(buffer: ShortArray?, writePos: Int, filledCount: Int): ShortArray? {
+        if (buffer == null || filledCount == 0) return null
+        val out = ShortArray(filledCount)
+        if (filledCount < buffer.size) {
+            System.arraycopy(buffer, 0, out, 0, filledCount)
+        } else {
+            val tail = buffer.size - writePos
+            System.arraycopy(buffer, writePos, out, 0, tail)
+            System.arraycopy(buffer, 0, out, tail, writePos)
+        }
+        return out
     }
 
     private fun saveWavToDownloads(samples: ShortArray, sampleRateHz: Int, displayName: String, logTag: String): String? {
@@ -444,126 +416,6 @@ class UlzvuService : Service(), SensorEventListener {
             EventLog.log(LogLevel.ERROR, logTag, "Uložení WAV selhalo ($displayName)", e)
             null
         }
-    }
-
-    /** Starts capturing only what com.mynoise.mynoise is playing (via AudioPlaybackCapture,
-     * scoped to its UID so other apps' audio is never touched) into its own 30 s ring buffer.
-     * `projection` must come from a screen-capture consent the Activity just obtained --
-     * Android routes audio playback capture through that same consent flow, there's no
-     * audio-only variant of it. */
-    fun enablePlaybackCapture(projection: MediaProjection) {
-        if (playbackCaptureActive) return
-
-        val uid = try {
-            packageManager.getApplicationInfo(MYNOISE_PACKAGE, 0).uid
-        } catch (e: PackageManager.NameNotFoundException) {
-            playbackCaptureErrorText = getString(R.string.mynoise_not_installed)
-            EventLog.log(LogLevel.ERROR, "Playback", "My Noise ($MYNOISE_PACKAGE) není nainstalovaná")
-            projection.stop()
-            return
-        }
-
-        val captureConfig = try {
-            AudioPlaybackCaptureConfiguration.Builder(projection)
-                .addMatchingUid(uid)
-                .build()
-        } catch (e: Exception) {
-            EventLog.log(LogLevel.ERROR, "Playback", "AudioPlaybackCaptureConfiguration selhala", e)
-            playbackCaptureErrorText = getString(R.string.mynoise_capture_failed)
-            projection.stop()
-            return
-        }
-
-        val format = AudioFormat.Builder()
-            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-            .setSampleRate(PLAYBACK_SAMPLE_RATE_HZ)
-            .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-            .build()
-        val minBuf = AudioRecord.getMinBufferSize(
-            PLAYBACK_SAMPLE_RATE_HZ, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
-        )
-        if (minBuf <= 0) {
-            EventLog.log(LogLevel.ERROR, "Playback", "getMinBufferSize selhal pro playback capture")
-            playbackCaptureErrorText = getString(R.string.mynoise_capture_failed)
-            projection.stop()
-            return
-        }
-
-        val record = try {
-            AudioRecord.Builder()
-                .setAudioFormat(format)
-                .setAudioPlaybackCaptureConfig(captureConfig)
-                .setBufferSizeInBytes(minBuf * 4)
-                .build()
-        } catch (e: Exception) {
-            EventLog.log(LogLevel.ERROR, "Playback", "AudioRecord (playback capture) selhal", e)
-            playbackCaptureErrorText = getString(R.string.mynoise_capture_failed)
-            projection.stop()
-            return
-        }
-        if (record.state != AudioRecord.STATE_INITIALIZED) {
-            EventLog.log(LogLevel.ERROR, "Playback", "AudioRecord (playback) se neinicializoval (state=${record.state})")
-            playbackCaptureErrorText = getString(R.string.mynoise_capture_failed)
-            projection.stop()
-            return
-        }
-
-        mediaProjection = projection
-        projection.registerCallback(projectionCallback, Handler(Looper.getMainLooper()))
-
-        synchronized(playbackLock) {
-            playbackBuffer = ShortArray(PLAYBACK_SAMPLE_RATE_HZ * REWIND_BUFFER_SECONDS)
-            playbackWritePos = 0
-            playbackFilledCount = 0
-        }
-
-        playbackAudioRecord = record
-        playbackCaptureActive = true
-        record.startRecording()
-
-        playbackThread = thread(name = "ulzvu-playback") {
-            val buf = ShortArray(2048)
-            while (playbackCaptureActive) {
-                val read = record.read(buf, 0, buf.size)
-                if (read > 0) {
-                    synchronized(playbackLock) {
-                        val pb = playbackBuffer ?: return@synchronized
-                        for (i in 0 until read) {
-                            pb[playbackWritePos] = buf[i]
-                            playbackWritePos = (playbackWritePos + 1) % pb.size
-                            if (playbackFilledCount < pb.size) playbackFilledCount++
-                        }
-                    }
-                }
-            }
-        }
-
-        EventLog.log(LogLevel.INFO, "Playback", "Záznam My Noise spuštěn (uid=$uid)")
-    }
-
-    fun disablePlaybackCapture() {
-        if (!playbackCaptureActive) return
-        playbackCaptureActive = false
-        playbackThread?.join(500)
-        playbackThread = null
-        try {
-            playbackAudioRecord?.apply {
-                stop()
-                release()
-            }
-        } catch (e: Exception) {
-            EventLog.log(LogLevel.ERROR, "Playback", "Chyba při zastavování playback AudioRecord", e)
-        }
-        playbackAudioRecord = null
-        synchronized(playbackLock) { playbackBuffer = null }
-        try {
-            mediaProjection?.unregisterCallback(projectionCallback)
-            mediaProjection?.stop()
-        } catch (e: Exception) {
-            // best effort -- projection may already be gone
-        }
-        mediaProjection = null
-        EventLog.log(LogLevel.INFO, "Playback", "Záznam My Noise zastaven")
     }
 
     private fun saveLogSliceToDownloads(lines: List<String>, timestamp: String): String? {
@@ -679,6 +531,5 @@ class UlzvuService : Service(), SensorEventListener {
     override fun onDestroy() {
         super.onDestroy()
         if (running) stopCapture()
-        disablePlaybackCapture()
     }
 }
