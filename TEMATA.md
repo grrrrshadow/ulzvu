@@ -238,6 +238,68 @@ tlaku na paměť).
   na pozadí stejně spolehlivě jako mikrofon (FGS typ "microphone") —
   netestováno explicitně, jen že capture jde spustit a jde uložit.
 
+### 3.11 První analýza reálné nahrávky z Oppa (2026-09-11, `zvuk_20260911_115049.wav`)
+
+Uživatel poslal WAV z mikrofonu (30 s, "Uložit 30 s"). Hlášení: přes
+sluchátka naplno slyšel ženský hlas ("givmi"); v záznamu My Noise prý nic;
+v záznamu z mikrofonu "v prvních dvou vteřinách" zvuk odpovídající délkou
+i obsahem, ale s "velmi odlišnou hloubkou hlasu". Analýza (numpy/scipy,
+skript v sandboxu — spektrogram, RMS obálka, autokorelační odhad F0):
+
+**Technické nálezy o Oppo A18:**
+- Soubor je 192 kHz, ale nad 24 kHz je jen digitální ticho (−152 dB abs.,
+  ostrý pád −56 dB přesně na 24 kHz). **Oppo hlásí 192 kHz, reálně je to
+  převzorkovaných 48 kHz — efektivní Nyquist 24 kHz.** Vyšší vzorkování
+  na Oppu nic nepřidá, jen 4× větší soubory a paměť (4 GB RAM!). Zvážit
+  v `AudioProber` preferovat 48 kHz, pokud se nad 24 kHz nic neobjeví.
+- V celé nahrávce je **stálý šumový pás 17–22 kHz** (PSD při 17 kHz jen
+  −13 dB pod středem řeči 1–4 kHz, výš než pás 8–17 kHz). Typický
+  noise-shaping sigma-delta ADC / vlastní šum MEMS mikrofonu. Přesně to
+  je pásmo, které detektor hlídá — adaptivní floor to sice absorbuje, ale
+  na tomto telefonu je >17 kHz od přírody hlučnější.
+- Slabý přerušovaný tón ~4,8–5 kHz (elektronické pískání, v místnosti
+  nebo v telefonu) — vidět jako vodorovná linka ve spektrogramu.
+
+**Co je v nahrávce (čas 0 = 30 s před zmáčknutím, čas 30 = zmáčknutí):**
+- **0–2 s: nic.** RMS −55 až −65 dBFS = šumové pozadí (floor −64 dB).
+  Spektrálně totožné s prokazatelně tichým úsekem 26–29 s (korelace 0,98,
+  průměrný rozdíl 3 dB). Žádná harmonická/hlasová struktura (znělost
+  0,35, odhad F0 náhodně skáče 62–400 Hz = šum). Jediné, co tam je:
+  jeden klik v 0,88 s a to slabé 4,8kHz pískání.
+- **3,44–4,00 s: jediná výrazná událost na začátku** — 0,56 s dlouhý,
+  25–30 dB nad floorem, **silně znělý (52/52 rámců, síla 0,75)**, F0
+  plynule klouže 137 → 111 → 122 Hz (std 8 Hz, ~20 % drift = ne motor,
+  ne brum; motor má std < 2 Hz). Čistý harmonický sloupec, ale **skoro
+  všechna energie pod 400 Hz (h1+h2), 1–2 kHz slabě, nad 2 kHz nic.**
+  → nízko posazený (mužské pásmo), **tlumený / dolní propustí filtrovaný**
+  znělý zvuk — jako hlas přes stěnu/stan/z dálky, nebo vzdálený stroj se
+  sklouzávající otáčkou. Délka ~1–2 slabiky. Pravděpodobně TOHLE je zvuk,
+  který uživatel označil za "v prvních dvou vteřinách" (3,4 s ≈ začátek)
+  a jehož "hloubka" mu neseděla (127 Hz vs. vnímaný ženský hlas 165–255).
+- 17,0–18,4 s a 19,6–20,2 s: velmi hlasité (špička −1,5 dB!), **neznělé**
+  (0 znělých rámců), širokopásmové 0–24 kHz → rány / manipulace s
+  telefonem / náraz, ne hlas.
+- V ultrazvukovém pásmu (17–24 kHz) při 3,44–4,0 s NIC nad stálý floor.
+
+**Interpretace pro projekt (technicky, ne diagnosticky):**
+- Parametrický reproduktor produkuje demodulovaný zvuk s **velmi slabými
+  basy** (známá vlastnost parametrických polí — účinnost demodulace roste
+  s frekvencí, pod ~300–500 Hz prakticky nic). Zvuk v 3,44 s je přesný
+  opak: skoro jen basy, nic nad 2 kHz. **Tahle konkrétní událost tedy
+  neodpovídá parametrickému reproduktoru.** Přidáno jako kritérium do 4.4.
+- Vnímaný "ženský hlas" (F0 165–255 Hz) vs. naměřených 127 Hz: rozdíl
+  výšky není v nahrávce, je mezi nahrávkou a vjemem. Přes sluchátka
+  hrající nahlas projde zvenku hlavně nejsilnější nízkofrekvenční část,
+  zbytek si sluch doplňuje — u fráze, kterou člověk čeká, je to známý
+  jev (auditory pareidolia / "phantom words"). To je nejúspornější
+  vysvětlení shody délky/obsahu při neshodě výšky.
+
+**Chybí k dokončení:** soubor `mynoise_20260911_115049.wav` (ověřit, že
+capture vůbec něco nahrál — pokud je celý tichý, My Noise capture
+blokuje a "nic v My Noise" nic neznamená), `log_20260911_115049.txt`, a
+kolik vteřin po zaslechnutí uživatel zmáčkl Uložit (čas 30 = stisk; při
+rychlém stisku by zvuk byl na KONCI souboru, ne na začátku).
+
 ## 4. Cílová technologie: parametrické ultrazvukové směrové reproduktory
 
 Rešerše 2026-09-01 (Focusonics, Audfly, Akoustic Arts, Holosonics/Audio
@@ -320,6 +382,13 @@ změřit reálné zařízení:
    — appka nikdy neuvidí skutečnou 40 kHz nosnou přímo. Nutné nastavit
    očekávání: detekce bude pravděpodobnostní indikátor "něco v okolí je
    podezřelé", ne jistý důkaz konkrétního zařízení.
+5. **Vylučovací kritérium — basy.** Parametrický reproduktor má velmi
+   slabou odezvu pod ~300–500 Hz (účinnost demodulace ve vzduchu roste
+   s frekvencí; výrobci uvádějí spodní hranici 200–500 Hz a i tam je to
+   slabé). Pokud má slyšitelná událost v nahrávce těžiště energie pod
+   400 Hz a nad 2 kHz skoro nic (jako událost 3,44 s v 3.11), parametrický
+   reproduktor jako zdroj prakticky vyloučit. Naopak podezřelý je zvuk
+   "tenký", bez basů, s energií 500 Hz–10 kHz.
 
 ## 5. Rozhodnutí
 
