@@ -261,44 +261,66 @@ skript v sandboxu — spektrogram, RMS obálka, autokorelační odhad F0):
   nebo v telefonu) — vidět jako vodorovná linka ve spektrogramu.
 
 **Co je v nahrávce (čas 0 = 30 s před zmáčknutím, čas 30 = zmáčknutí):**
-- **0–2 s: nic.** RMS −55 až −65 dBFS = šumové pozadí (floor −64 dB).
-  Spektrálně totožné s prokazatelně tichým úsekem 26–29 s (korelace 0,98,
-  průměrný rozdíl 3 dB). Žádná harmonická/hlasová struktura (znělost
-  0,35, odhad F0 náhodně skáče 62–400 Hz = šum). Jediné, co tam je:
-  jeden klik v 0,88 s a to slabé 4,8kHz pískání.
-- **3,44–4,00 s: jediná výrazná událost na začátku** — 0,56 s dlouhý,
-  25–30 dB nad floorem, **silně znělý (52/52 rámců, síla 0,75)**, F0
-  plynule klouže 137 → 111 → 122 Hz (std 8 Hz, ~20 % drift = ne motor,
-  ne brum; motor má std < 2 Hz). Čistý harmonický sloupec, ale **skoro
-  všechna energie pod 400 Hz (h1+h2), 1–2 kHz slabě, nad 2 kHz nic.**
-  → nízko posazený (mužské pásmo), **tlumený / dolní propustí filtrovaný**
-  znělý zvuk — jako hlas přes stěnu/stan/z dálky, nebo vzdálený stroj se
-  sklouzávající otáčkou. Délka ~1–2 slabiky. Pravděpodobně TOHLE je zvuk,
-  který uživatel označil za "v prvních dvou vteřinách" (3,4 s ≈ začátek)
-  a jehož "hloubka" mu neseděla (127 Hz vs. vnímaný ženský hlas 165–255).
-- 17,0–18,4 s a 19,6–20,2 s: velmi hlasité (špička −1,5 dB!), **neznělé**
-  (0 znělých rámců), širokopásmové 0–24 kHz → rány / manipulace s
-  telefonem / náraz, ne hlas.
-- V ultrazvukovém pásmu (17–24 kHz) při 3,44–4,0 s NIC nad stálý floor.
+- **3,44–4,00 s: to je uživatel sám** ("to jsem já 3–4 vteřina, vyrušili
+  mě"). Znělý, F0 137→111 Hz, energie pod 400 Hz. Pro hledaný zvuk
+  irelevantní; hodí se jako **referenční vzorek hlasu uživatele** (jak
+  vypadá lidský hlas u tohoto mikrofonu z blízka).
+- 17,0–18,4 s a 19,6–20,2 s: velmi hlasité (špička −1,5 dB), neznělé,
+  širokopásmové → manipulace s telefonem / náraz.
+- **0–2 s, 1. průchod (hrubá energie + znělost): nic** — RMS −55 až −65
+  dBFS, spektrálně shodné s tichým úsekem 26–29 s, znělost 0,35 (šum).
+- **0–2 s, 2. průchod (citlivý: spektrogram MINUS medián pozadí 26–29 s,
+  2,5 ms krok, obálky pásem po 5 ms, hledání stálých tónů, modulační
+  spektrum):**
+  - Nad pozadím JE: pás **100–500 Hz o +6 až +10 dB** (p90 +13 dB, pozadí
+    samo má p90 +6 dB). ALE stejné zvednutí basů je **nepřetržitě od 0 do
+    ~22 s** (po 0,5 s: +5 až +10 dB), klesá na 0 až ve 23–28 s. Není to
+    tedy událost 1–2 s dlouhá, ale **pomalá změna okolního basového šumu**
+    (ventilace, stroj, změna polohy telefonu); úsek 26–29 s je prostě
+    nejtišší část souboru. Spektrálně bez harmonické řady (vrcholy 111,
+    147, 211, 258, 299, 363, 416, 586 Hz, +4…+8 dB, nepravidelné).
+  - Modulační spektrum basové obálky 2–8 Hz (tempo slabik) je v 0–2 s
+    **o 2–10 dB NIŽŠÍ** než v pozadí → basy v 0–2 s nemají slabičný rytmus.
+  - Časově ohraničené věci v 0–2 s: tón **4,9 kHz** dvakrát (0,05–0,15 s
+    a 1,50–1,60 s, až +26 dB nad pozadí, úzký) — stejné "pískání" jako
+    jinde v souboru; **klik 0,88 s** (širokopásmový, 10 ms).
+  - Pásma řeči 400–1200 a 1200–3500 Hz: p90 +8 a +5 dB, pozadí +6 a +5 →
+    prakticky totožné s pozadím. Nic ve tvaru slabik/formantů.
+  - Skripty `deep02.py`/`deep03.py` (sandbox), obrázky `deep02.png`,
+    `deep03.png`; posluchové klipy A (0–2 s), B (pozadí), D/E (totéž jen
+    80–600 Hz), všechny normalizované na −12 dBFS.
+- Ultrazvukové pásmo 17–24 kHz: nikde nic nad stálý floor.
+- **My Noise capture funguje** (uživatel: "my noise nahrava normálně, v
+  nahrávce je my noise jenom bez toho zvuku"). → Zvuk, který uživatel
+  slyší ve sluchátkách, **není v audio streamu aplikace My Noise.**
 
-**Interpretace pro projekt (technicky, ne diagnosticky):**
-- Parametrický reproduktor produkuje demodulovaný zvuk s **velmi slabými
-  basy** (známá vlastnost parametrických polí — účinnost demodulace roste
-  s frekvencí, pod ~300–500 Hz prakticky nic). Zvuk v 3,44 s je přesný
-  opak: skoro jen basy, nic nad 2 kHz. **Tahle konkrétní událost tedy
-  neodpovídá parametrickému reproduktoru.** Přidáno jako kritérium do 4.4.
-- Vnímaný "ženský hlas" (F0 165–255 Hz) vs. naměřených 127 Hz: rozdíl
-  výšky není v nahrávce, je mezi nahrávkou a vjemem. Přes sluchátka
-  hrající nahlas projde zvenku hlavně nejsilnější nízkofrekvenční část,
-  zbytek si sluch doplňuje — u fráze, kterou člověk čeká, je to známý
-  jev (auditory pareidolia / "phantom words"). To je nejúspornější
-  vysvětlení shody délky/obsahu při neshodě výšky.
+**Co z toho plyne (technicky):**
+- Sluchátka dostávají mix ze systému, capture po UID zachytí jen My
+  Noise. Pokud by zvuk do sluchátek přicházel z jiné aplikace / systému /
+  Bluetooth cestou, v `mynoise_*.wav` by nebyl, ale v **záznamu celého
+  mixu** by byl. → **Navrženo: přepínač "nahrávat vše, co jde do
+  sluchátek"** (`AudioPlaybackCaptureConfiguration` bez `addMatchingUid`,
+  s `addMatchingUsage(USAGE_MEDIA/GAME/UNKNOWN)`). Výsledek rozhodne:
+  zvuk v mixu = jiná appka/systém; zvuk ani v mixu ani v mikrofonu =
+  nepřichází do telefonu jako audio.
+- Uživatel uvádí zdroj "půl kilometru daleko". Fyzika parametrického
+  reproduktoru: nosná 40 kHz má útlum ve vzduchu ~1–1,5 dB/m, tj. ultrazvuk
+  fyzicky nedoletí dál než desítky metrů; slyšitelný zvuk vzniká
+  demodulací v prvních metrech před reproduktorem a dál se šíří jako
+  běžný zvuk (−6 dB na zdvojnásobení vzdálenosti, vysoké kmitočty tlumí
+  vzduch). Na 500 m by tedy dorazil jen běžný, basově zabarvený zvuk a
+  **mikrofon by ho slyšel stejně jako ucho** — a v 0–2 s v mikrofonu
+  žádný slabičný zvuk není. Parametrický reproduktor na 500 m je mimo
+  fyzikální možnosti; hledat je třeba jiný mechanismus.
+- Vnímaná shoda délky/obsahu při neshodě výšky hlasu: jediné, co v
+  mikrofonu v 0–2 s koreluje s "hlubokým" vjemem, je stálý basový šum bez
+  rytmu. Nejúspornější vysvětlení zůstává vjem doplněný sluchem, ale
+  rozhodne až test s celým mixem do sluchátek (výše).
 
-**Chybí k dokončení:** soubor `mynoise_20260911_115049.wav` (ověřit, že
-capture vůbec něco nahrál — pokud je celý tichý, My Noise capture
-blokuje a "nic v My Noise" nic neznamená), `log_20260911_115049.txt`, a
-kolik vteřin po zaslechnutí uživatel zmáčkl Uložit (čas 30 = stisk; při
-rychlém stisku by zvuk byl na KONCI souboru, ne na začátku).
+**Chybí k dokončení:** `log_20260911_115049.txt`, kolik vteřin po
+zaslechnutí uživatel zmáčkl Uložit (čas 30 = stisk), typ sluchátek
+(drát / Bluetooth — u BT je další cesta mimo mix telefonu), a nahrávka s
+"celý mix" capture, až bude implementován.
 
 ## 4. Cílová technologie: parametrické ultrazvukové směrové reproduktory
 
