@@ -347,6 +347,21 @@ sám o sobě neukazuje; rozhodne teprve korelace v čase (viz TODO
 vteřin před stiskem". Vyhodnocení: opakuje se vzor tón→klik přesně u
 značek, nebo nahodile i mimo ně?
 
+**Potvrzeno živě ze screenshotu appky (2026-09-11 16:33), Oppo CPH2591 /
+Android 14 API 34:** `Zdroj: MIC` — **ne UNPROCESSED.** `AudioProber`
+zkusil UNPROCESSED první, ale `AudioManager
+.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED` na tomhle telefonu/ROMu
+vychází nepravdivě/nedostupně, takže appka spadla na `MIC`.
+**Důsledek:** analyzovaná nahrávka `zvuk_20260911_115049.wav` prošla
+telefonovým DSP řetězcem pro `MIC` (AGC + potlačení šumu, případně
+echo cancellation), ne surovým signálem. AGC mohl posouvat úroveň
+flooru v čase, potlačení šumu mohlo utlumit/zdeformovat právě krátké
+tiché tranzienty (klik 0,88 s). Nedá se to ze staré nahrávky odstranit
+zpětně; jde jen konstatovat jako limit dosavadní analýzy. Protože
+UNPROCESSED na tomto telefonu evidentně není k dispozici, `MIC` je
+jediná reálná cesta zvuku do appky na Oppo A18 — případná náprava
+(externí mikrofon, jiný telefon) je mimo rozsah současné appky.
+
 **Chybí k dokončení:** `log_20260911_115049.txt`, kolik vteřin po
 zaslechnutí uživatel zmáčkl Uložit (čas 30 = stisk), typ sluchátek
 (drát / Bluetooth — u BT je další cesta mimo mix telefonu), a nahrávka s
