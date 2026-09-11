@@ -317,6 +317,36 @@ skript v sandboxu — spektrogram, RMS obálka, autokorelační odhad F0):
   rytmu. Nejúspornější vysvětlení zůstává vjem doplněný sluchem, ale
   rozhodne až test s celým mixem do sluchátek (výše).
 
+**Zoom 0,70–1,00 s (uživatel: „koncem první vteřiny krátce řekne givmi,
+rychle za sebou"):** v tom okně je jedna složená událost:
+tón **2,1 kHz, 0,76–0,86 s** (95 ms, +19 dB, úzký) → překryv s dávkou
+**4,9 kHz 0,83–0,92 s** → **klik 0,879–0,893 s** (14 ms, širokopásmový
+0–20 kHz, maximum 6–8 kHz +19 dB). Celkem ~160 ms, dvoudílné (tón, klik)
+— délkou a dvoudílností sedí na rychlé „giv-mi". Ale: znělost 0,27 (ne
+hlas), žádné formanty; a **všechny tři složky se v souboru opakují i
+jinde**: stejné kliky v 3,15; 7,06; 8,56; 8,73; 14,00; 15,89 s (tichá
+část), dávky 4,9 kHz zhruba každých 0,3 s v celém souboru, tón 2,1–2,2
+kHz v 0,11; 0,93; 2,27 s. Složky u 0,88 s tedy nejsou pro ten okamžik
+jedinečné. Skript `deep04.py`/`deep05.py`, obrázek `deep04.png`, klipy F
+(0,6–1,1 s) a G (4× zpomaleno).
+
+**Otázka uživatele — „projeví se parametrický reproduktor v sousedních
+pásmech?"** Ano, tři cesty: (1) demodulovaný slyšitelný zvuk sám (to je
+to, co má být slyšet, mikrofon ho zachytí jako běžný zvuk); (2) nelinearita
+MEMS mikrofonu při silné nosné → vlastní demodulace v mikrofonu
+(princip „DolphinAttack"), výsledek opět v pásmu řeči; (3) prosak
+antialiasingu → **stálá aliasová čára** na |k·48 kHz − f_nosné| (40 kHz
+→ 8 kHz, 45 kHz → 3 kHz). V nahrávce žádná stálá čára u 8 kHz ani jiná
+stabilní úzká čára mimo 4,9 kHz (která je periodicky přerušovaná a v
+celém souboru) není. Nález u 0,88 s tedy na parametrický reproduktor
+sám o sobě neukazuje; rozhodne teprve korelace v čase (viz TODO
+„Značka").
+
+**TODO appka — tlačítko „Slyšel jsem teď" (Značka):** zapíše WARN
+„Značka" s časem do logu a do 30s balíku, aby odpadla otázka „kolik
+vteřin před stiskem". Vyhodnocení: opakuje se vzor tón→klik přesně u
+značek, nebo nahodile i mimo ně?
+
 **Chybí k dokončení:** `log_20260911_115049.txt`, kolik vteřin po
 zaslechnutí uživatel zmáčkl Uložit (čas 30 = stisk), typ sluchátek
 (drát / Bluetooth — u BT je další cesta mimo mix telefonu), a nahrávka s
