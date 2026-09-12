@@ -502,6 +502,34 @@ změní → RFI/BT cesta potvrzena a máme co stínit.
 - Buildy appky pouští výhradně uživatel (lokálně / Android Studio); v tomto   "já: buildy v repo ulzvu pouštíš ty, nic tady nemažu jen přidávám koment."
   sandboxu jde reálně spustit a testovat jen modul `core` (bez Android SDK).
 
+### 5.x Nefiltrovat zvuk v appce (rozhodnuto 2026-09-12)
+
+Po nálezu 9 009 detekcí za 2 dny (medián −84 dB / 0,16 s / 18,1 kHz, tj.
+detektor spouští na vlastním šumovém pásmu ADC Oppa) padl návrh zpřísnit
+práh přímo v appce. **Uživatel rozhodl: ne.** Zvuk z okolí se v appce
+filtrovat nebude vůbec — filtruje se až nahrávka při analýze.
+
+Důvod (technicky správný): WAV je surový, detektor do něj nezasahuje,
+jen zapisuje řádky do logu. Filtr v appce by zahodil data natrvalo;
+filtr při analýze jde kdykoli zopakovat s jinými kritérii.
+
+Důsledek: `ulzvu_log.txt` zůstane zahlcený (tisíce WARN/den) a není
+použitelný jako přehled incidentů — zdrojem pravdy je nahrávka.
+
+### 5.y Chybějící `mynoise_*.wav` u save 2026-09-12 23:20:08
+
+Uloženy jen `zvuk` + `log`. V `ulzvu_log.txt` (18 018 řádků) **nula
+ERROR a nula Playback záznamů** → capture neselhal, jen nebyl aktivní
+v okamžiku stisku (`playbackCaptureActive == false` → `null` buffer →
+`saved_pair_format`, bez hlášky). Příčinu nelze zpětně určit, protože
+start/stop Playbacku je INFO a INFO se do souboru nezapisuje (viz 3.5).
+Kandidáti: systém zrušil MediaProjection (zhasnutá obrazovka / pozadí),
+stisk Uložit dřív, než se `MainActivity` stihla svázat se službou, nebo
+capture v té relaci nebyl zapnutý. Náprava (logovat Playback jako WARN)
+**navržena a zatím neprovedena — uživatel řekl nic neměnit.**
+Poznávací znamení bez změny kódu: popisek tlačítka („Vypnout" = běží)
+a počet jmen v hlášce po uložení (tři = vše, dvě = My Noise chybí).
+
 ## 6. Otevřené otázky pro uživatele
 
 - Máte k dispozici (nebo budete mít) reálné zařízení tohoto typu k testování/
