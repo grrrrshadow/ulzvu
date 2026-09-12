@@ -459,7 +459,7 @@ změřit reálné zařízení:
 
 ### 4.5 Kandidáti mimo parametrické reproduktory (rešerše 2026-09-12)
 
-Uživatel parametrické reproduktory vyloučil; hledáme jinou elektroniku,
+Uživatel parametrické reproduktory vyloučil;"já: nevyloučil jsem parametrické reproduktory, někde jsem tě tak pochopil že je vyloučeno aby to byly parametrické reproduktory. nic tady nemažu jen přidávám komentář." hledáme jinou elektroniku,
 která by dala **hlas do sluchátek, který není ve streamu My Noise ani
 v záznamu mikrofonu**. Seřazeno podle toho, jak dobře sedí na data:
 
@@ -499,7 +499,7 @@ změní → RFI/BT cesta potvrzena a máme co stínit.
   (openttd repo) — do openttd se nesahá vůbec.
 - Log a WAV se ukládají do normálního Android Downloads
   (`Stažené soubory/Ulzvu/…`), ne do appka-interního úložiště.
-- Buildy appky pouští výhradně uživatel (lokálně / Android Studio); v tomto
+- Buildy appky pouští výhradně uživatel (lokálně / Android Studio); v tomto   "já: buildy v repo ulzvu pouštíš ty, nic tady nemažu jen přidávám koment."
   sandboxu jde reálně spustit a testovat jen modul `core` (bez Android SDK).
 
 ## 6. Otevřené otázky pro uživatele
