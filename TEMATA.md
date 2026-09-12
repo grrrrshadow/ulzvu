@@ -457,6 +457,42 @@ změřit reálné zařízení:
    reproduktor jako zdroj prakticky vyloučit. Naopak podezřelý je zvuk
    "tenký", bez basů, s energií 500 Hz–10 kHz.
 
+### 4.5 Kandidáti mimo parametrické reproduktory (rešerše 2026-09-12)
+
+Uživatel parametrické reproduktory vyloučil; hledáme jinou elektroniku,
+která by dala **hlas do sluchátek, který není ve streamu My Noise ani
+v záznamu mikrofonu**. Seřazeno podle toho, jak dobře sedí na data:
+
+1. **RF rušení demodulované ve sluchátkovém řetězci (RFI).** Kabel
+   sluchátek / vstup zesilovače funguje jako anténa; silný AM/SSB
+   vysílač (CB 27 MHz, radioamatér, taxi dispečink, analogová chůvička
+   40/864 MHz) se v nelinearitě zesilovače demoduluje a je slyšet jako
+   hlas. Dobře zdokumentovaný jev (fóra, patenty na potlačení RFI).
+   **Sedí na data:** vzniká až za DAC → není v playback capture; není ve
+   vzduchu → mikrofon ho nemá. Detekce: RTL-SDR na 27 MHz / 144 / 430
+   / 864 MHz v okamžiku, kdy to slyšíš. Stínění: feritové kroužky na
+   kabel, kratší kabel, jiná sluchátka (BT vs. drát mění náchylnost).
+2. **Bluetooth multipoint / cizí zdroj.** BT sluchátka drží až 2 hosty;
+   dřív spárované zařízení v dosahu se může připojit a přehrávat.
+   **Sedí na data:** audio nejde přes telefon → není v capture ani v
+   mikrofonu (jen slabý únik). Detekce: seznam spárovaných zařízení ve
+   sluchátkách, `nRF Connect` na telefonu. Obrana: smazat pairing list,
+   vypnout multipoint, drátová sluchátka.
+3. **Fotoakustický laser (MIT Lincoln Lab 2019).** 1,9 µm thulium laser,
+   vodní pára ve vzduchu → zvuk 60 dB u ucha na ~2,5 m, laboratorní
+   dosah jednotky metrů. **Nesedí:** dosah, a zvuk vzniká ve vzduchu →
+   mikrofon by ho slyšel.
+4. **Mikrovlnný sluchový efekt (Frey)** — viz 4.x výše. **Nesedí:**
+   nejde přes sluchátka, kliky/bzučení, ne slova, dosah metry.
+
+**Co žádný z kandidátů nevysvětluje:** brnění jazyka, pocit výboje —
+to nejsou akustické ani RF jevy. Kandidáti 1–2 vysvětlují nejvýš „hlas
+ve sluchátkách, který není v záznamu".
+
+**Nejlevnější rozhodující test (bez nákupu):** drátová sluchátka místo
+BT (nebo naopak) + feritový kroužek na kabel. Když hlas zmizí nebo se
+změní → RFI/BT cesta potvrzena a máme co stínit.
+
 ## 5. Rozhodnutí
 
 - Appka žije ve vlastním repu `grrrrshadow/ulzvu`, ne v `forclaude`
