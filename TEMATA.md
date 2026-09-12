@@ -530,6 +530,23 @@ capture v té relaci nebyl zapnutý. Náprava (logovat Playback jako WARN)
 Poznávací znamení bez změny kódu: popisek tlačítka („Vypnout" = běží)
 a počet jmen v hlášce po uložení (tři = vše, dvě = My Noise chybí).
 
+### 5.z Neoptimalizovat appku pro Oppo (rozhodnuto 2026-09-12)
+
+Návrh přepnout záznam na 48 kHz (buffer 11,0 → 2,7 MB, FFT 93,8 → 23,4
+za sekundu, bez ztráty dat — nad 24 kHz na Oppu stejně nic není)
+**zamítnut**. Důvod: cílová platforma je Motorola Edge 60 Fusion
+(8 GB RAM + 16 GB rozšíření), kde je footprint nepodstatný; nemá smysl
+kvůli Oppu měnit appku.
+
+Sekání telefonu (padající Firefox, zasekané psaní) uživatel označil za
+nesouvisející s Ulzvu — příčina se hledá v úložišti / Rozšíření RAM
+ColorOS, ne v appce.
+
+**Až bude Motorola:** znovu ověřit `AudioProber` — jiný SoC (Dimensity)
+může 192 kHz podporovat reálně, ne převzorkovaně, a může nabídnout
+`UNPROCESSED`, který Oppo nemá (viz 3.11). To je první měření, které se
+tam má udělat.
+
 ## 6. Otevřené otázky pro uživatele
 
 - Máte k dispozici (nebo budete mít) reálné zařízení tohoto typu k testování/
