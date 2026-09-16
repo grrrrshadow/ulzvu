@@ -493,6 +493,40 @@ ve sluchátkách, který není v záznamu".
 BT (nebo naopak) + feritový kroužek na kabel. Když hlas zmizí nebo se
 změní → RFI/BT cesta potvrzena a máme co stínit.
 
+### 3.12 Režim „Smyčka zvuk 5 min" (2026-09-16)
+
+Na žádost uživatele přibyl druhý režim záznamu. Tlačítko je na místě, kde
+bylo „Zapnout záznam My Noise"; My Noise se posunul o řádek níž.
+
+**Vzájemné vyloučení:** běží vždy jen jeden režim — buď analýza (30s
+buffer + FFT + detekce + spektrum), nebo smyčka (5min buffer, jen čtení
+a uchování). Neaktivní tlačítko je zašedlé. Důvod: mikrofon vlastní jeden
+režim, FFT při 192 kHz je ~94 transformací za sekundu (zbytečná zátěž,
+když uživatel chce jen dlouhé syrové okno okolí), a smyčka potřebuje
+desetkrát větší buffer.
+
+**Paměť — hlavní riziko a jak je vyřešené.** Android stropuje haldu jedné
+appky (`dalvik.vm.heapgrowthlimit`): ~192 MB na 4GB telefonu, ~256 MB na
+8GB. 5 min @192 kHz = 110 MB, což by jako `ShortArray` sedělo na víc než
+polovině stropu → dřív nebo později OutOfMemoryError.
+- Nový `core/PcmRingBuffer` drží vzorky v **direct ByteBufferu**, tedy
+  v nativní paměti mimo haldu → strop se na něj nevztahuje. 9 unit testů
+  (přetečení, pořadí od nejstaršího, čtení po blocích, kapacita).
+- Ukládání WAV se **streamuje po 32k vzorcích** místo materializace celého
+  pole; starý postup (snapshot do pole + převod do bajtového pole) by u
+  5 minut chtěl na haldě 220 MB.
+- Zámek se drží po celou dobu zápisu, aby soubor byl konzistentní okno;
+  živý záznam kvůli tomu může na okamžik vypadnout — u tlačítka, jehož
+  smyslem je uchovat MINULOST, je to správný kompromis.
+
+Velikosti bufferu (mono 16 bit): 30 s @192 kHz = 11 MB, 5 min @192 kHz =
+110 MB, 5 min @48 kHz = 27,5 MB.
+
+**Poznámka k CI:** ve stejný den spadl build v Actions — Google odstranil
+ze SDK repozitáře zastaralý balíček `tools`, který `android-actions/
+setup-android` pořád instaloval ve výchozí sadě. Opraveno `packages: ''`
++ hledáním `sdkmanager` podle verze cmdline-tools.
+
 ## 5. Rozhodnutí
 
 - Appka žije ve vlastním repu `grrrrshadow/ulzvu`, ne v `forclaude`
