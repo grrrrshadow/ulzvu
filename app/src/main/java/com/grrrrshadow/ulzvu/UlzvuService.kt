@@ -20,6 +20,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
+import com.grrrrshadow.ulzvu.core.PcmRingBuffer
 import com.grrrrshadow.ulzvu.core.SpectrumAnalyzer
 import com.grrrrshadow.ulzvu.core.WavHeader
 import java.nio.ByteBuffer
@@ -44,9 +45,26 @@ private const val HR_MOTION_STDDEV_THRESHOLD = 1.2 // m/s^2 -- hand shake vs. pu
 private const val HR_UPDATE_INTERVAL_MS = 500L
 
 private const val REWIND_BUFFER_SECONDS = 30
+private const val LOOP_BUFFER_SECONDS = 300
+
+/** Samples copied per disk write when streaming the ring buffer out to a WAV. */
+private const val SAVE_CHUNK_SAMPLES = 32768
+
+/** Samples read per AudioRecord call in loop mode, where no FFT dictates the frame size. */
+private const val LOOP_READ_SAMPLES = 8192
 
 private const val NOTIFICATION_CHANNEL_ID = "ulzvu_running"
 private const val NOTIFICATION_ID = 1
+
+const val EXTRA_CAPTURE_MODE = "com.grrrrshadow.ulzvu.CAPTURE_MODE"
+
+/**
+ * The two capture modes are mutually exclusive by design, not by accident: analysis runs an
+ * FFT on every 2048-sample frame (~94 per second at 192 kHz), which is pointless CPU burn
+ * when the user only wants a long raw window of the surroundings, and the 5-minute loop needs
+ * ten times the buffer memory that analysis does.
+ */
+enum class CaptureMode { ANALYSIS, LOOP }
 
 /**
  * Android revokes microphone access from a plain background thread within a few seconds of
@@ -92,14 +110,15 @@ class UlzvuService : Service(), SensorEventListener {
         private set
     @Volatile var lastSaveStatusText: String? = null
         private set
+    @Volatile var mode: CaptureMode = CaptureMode.ANALYSIS
+        private set
 
     private var config: AudioConfig? = null
     private var audioRecord: AudioRecord? = null
     private var analysisThread: Thread? = null
 
-    private var rewindBuffer: ShortArray? = null
-    private var rewindWritePos = 0
-    private var rewindFilledCount = 0
+    private var rewindBuffer: PcmRingBuffer? = null
+    private var bufferSeconds = REWIND_BUFFER_SECONDS
     private val rewindLock = Any()
 
     private lateinit var sensorManager: SensorManager
@@ -127,8 +146,11 @@ class UlzvuService : Service(), SensorEventListener {
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val requested = intent?.getStringExtra(EXTRA_CAPTURE_MODE)
+            ?.let { runCatching { CaptureMode.valueOf(it) }.getOrNull() }
+            ?: CaptureMode.ANALYSIS
         startForeground(NOTIFICATION_ID, buildNotification())
-        if (!running) startCapture()
+        if (!running) startCapture(requested)
         return START_NOT_STICKY
     }
 
@@ -161,7 +183,9 @@ class UlzvuService : Service(), SensorEventListener {
         manager.createNotificationChannel(channel)
     }
 
-    private fun startCapture() {
+    private fun startCapture(requestedMode: CaptureMode) {
+        mode = requestedMode
+        bufferSeconds = if (requestedMode == CaptureMode.LOOP) LOOP_BUFFER_SECONDS else REWIND_BUFFER_SECONDS
         val cfg = try {
             AudioProber.probe(this)
         } catch (e: Exception) {
@@ -197,29 +221,66 @@ class UlzvuService : Service(), SensorEventListener {
         }
         audioRecord = record
 
-        synchronized(rewindLock) {
-            rewindBuffer = ShortArray(cfg.sampleRateHz * REWIND_BUFFER_SECONDS)
-            rewindWritePos = 0
-            rewindFilledCount = 0
+        // Native-memory ring (see PcmRingBuffer): a 5-minute 192 kHz window is ~110 MB, which
+        // as a ShortArray would sit at well over half of a 4 GB device's ~192 MB heap cap.
+        val ring = try {
+            PcmRingBuffer(cfg.sampleRateHz * bufferSeconds)
+        } catch (e: Throwable) {
+            val mb = cfg.sampleRateHz.toLong() * bufferSeconds * 2 / (1024 * 1024)
+            EventLog.log(LogLevel.ERROR, "Audio", "Nepodařilo se vyhradit buffer $mb MB", e)
+            lastSaveStatusText = getString(R.string.buffer_alloc_failed, mb)
+            try { record.release() } catch (_: Exception) {}
+            audioRecord = null
+            stopSelfCleanly()
+            return
         }
+        synchronized(rewindLock) { rewindBuffer = ring }
+
+        val bufferMb = ring.capacityBytes / (1024 * 1024)
+        EventLog.log(
+            LogLevel.INFO, "Audio",
+            "Režim ${if (mode == CaptureMode.LOOP) "smyčka" else "analýza"}: " +
+                "buffer $bufferSeconds s = $bufferMb MB"
+        )
 
         running = true
         record.startRecording()
 
-        analysisThread = thread(name = "ulzvu-analysis") {
+        analysisThread = thread(name = "ulzvu-capture") {
             try {
-                analysisLoop(record, cfg.sampleRateHz)
+                if (mode == CaptureMode.LOOP) loopOnlyCapture(record) else analysisLoop(record, cfg.sampleRateHz)
             } catch (e: Exception) {
-                EventLog.log(LogLevel.ERROR, "Audio", "Analyzační smyčka spadla", e)
+                EventLog.log(LogLevel.ERROR, "Audio", "Záznamová smyčka spadla", e)
             }
         }
 
         startHeartRate()
     }
 
+    /**
+     * Loop mode: read and retain, nothing else. No FFT, no detection, no spectrum -- the point
+     * is a long untouched window of the surroundings, and anything we'd filter or flag here
+     * can be done afterwards on the saved WAV without destroying data.
+     */
+    private fun loopOnlyCapture(record: AudioRecord) {
+        val buffer = ShortArray(LOOP_READ_SAMPLES)
+        latestSpectrumDb = null
+        peakText = ""
+        alertActive = false
+        alertText = getString(R.string.status_idle)
+
+        while (running) {
+            val read = record.read(buffer, 0, buffer.size)
+            if (read <= 0) continue
+            synchronized(rewindLock) { rewindBuffer?.write(buffer, read) }
+        }
+    }
+
     fun stopCapture() {
         running = false
-        analysisThread?.join(500)
+        // Generous join: a save in flight holds the ring lock for the length of one disk
+        // write (a 5-minute loop is ~110 MB), and the capture thread parks on that lock.
+        analysisThread?.join(2000)
         analysisThread = null
         try {
             audioRecord?.apply {
@@ -231,7 +292,7 @@ class UlzvuService : Service(), SensorEventListener {
         }
         audioRecord = null
         synchronized(rewindLock) { rewindBuffer = null }
-        EventLog.log(LogLevel.INFO, "Audio", "Analýza zastavena")
+        EventLog.log(LogLevel.INFO, "Audio", if (mode == CaptureMode.LOOP) "Smyčka zastavena" else "Analýza zastavena")
 
         stopHeartRate()
         stopSelfCleanly()
@@ -320,14 +381,7 @@ class UlzvuService : Service(), SensorEventListener {
     }
 
     private fun writeToRewindBuffer(samples: ShortArray) {
-        synchronized(rewindLock) {
-            val rb = rewindBuffer ?: return
-            for (s in samples) {
-                rb[rewindWritePos] = s
-                rewindWritePos = (rewindWritePos + 1) % rb.size
-                if (rewindFilledCount < rb.size) rewindFilledCount++
-            }
-        }
+        synchronized(rewindLock) { rewindBuffer?.write(samples) }
     }
 
     /** One tap saves the last REWIND_BUFFER_SECONDS of mic audio, the same window of My Noise
@@ -346,21 +400,21 @@ class UlzvuService : Service(), SensorEventListener {
             return
         }
 
-        val linear = synchronized(rewindLock) { extractLinear(rewindBuffer, rewindWritePos, rewindFilledCount) }
-        if (linear == null) {
+        val ring = rewindBuffer
+        if (ring == null || synchronized(rewindLock) { ring.filled } == 0) {
             lastSaveStatusText = getString(R.string.rewind_failed)
             EventLog.log(LogLevel.WARN, "Rewind", "Kruhový buffer je zatím prázdný")
             return
         }
 
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val audioName = saveWavToDownloads(linear, cfg.sampleRateHz, "zvuk_$timestamp.wav", "Rewind")
+        val audioName = saveRingToWav(ring, cfg.sampleRateHz, "zvuk_$timestamp.wav", "Rewind")
 
         val playbackName = playbackSamples?.let {
             saveWavToDownloads(it, PLAYBACK_SAMPLE_RATE_HZ, "mynoise_$timestamp.wav", "Playback")
         }
 
-        val cutoffMs = System.currentTimeMillis() - REWIND_BUFFER_SECONDS * 1000L
+        val cutoffMs = System.currentTimeMillis() - bufferSeconds * 1000L
         val logLines = EventLog.snapshot().filter { it.timestampMs >= cutoffMs }.map { EventLog.format(it) }
         val logName = saveLogSliceToDownloads(logLines, timestamp)
 
@@ -371,18 +425,61 @@ class UlzvuService : Service(), SensorEventListener {
         }
     }
 
-    /** Copies the valid samples out of a ring buffer in chronological order (oldest first). */
-    private fun extractLinear(buffer: ShortArray?, writePos: Int, filledCount: Int): ShortArray? {
-        if (buffer == null || filledCount == 0) return null
-        val out = ShortArray(filledCount)
-        if (filledCount < buffer.size) {
-            System.arraycopy(buffer, 0, out, 0, filledCount)
-        } else {
-            val tail = buffer.size - writePos
-            System.arraycopy(buffer, writePos, out, 0, tail)
-            System.arraycopy(buffer, 0, out, tail, writePos)
+    /**
+     * Streams the ring buffer straight into the file in chunks.
+     *
+     * The 5-minute loop is ~110 MB; turning it into one ShortArray and then one ByteArray (as
+     * the old snapshot-then-write path did) would ask the Java heap for 220 MB and die on the
+     * per-app cap. The lock is held for the whole write so the file is one consistent window --
+     * the capture thread stalls meanwhile and AudioRecord may drop a moment of live audio,
+     * which is the right trade when the entire point of the button is to keep the PAST.
+     */
+    private fun saveRingToWav(ring: PcmRingBuffer, sampleRateHz: Int, displayName: String, logTag: String): String? {
+        return try {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, displayName)
+                put(MediaStore.Downloads.MIME_TYPE, "audio/wav")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Ulzvu")
+            }
+
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri == null) {
+                EventLog.log(LogLevel.ERROR, logTag, "MediaStore.insert vrátil null pro $displayName")
+                return null
+            }
+
+            val stream = contentResolver.openOutputStream(uri)
+            if (stream == null) {
+                EventLog.log(LogLevel.ERROR, logTag, "openOutputStream vrátil null pro $uri")
+                return null
+            }
+
+            val chunk = ShortArray(SAVE_CHUNK_SAMPLES)
+            val bytes = ByteArray(SAVE_CHUNK_SAMPLES * 2)
+            stream.use { out ->
+                synchronized(rewindLock) {
+                    val total = ring.filled
+                    out.write(WavHeader.build(sampleRateHz, total * 2))
+                    var pos = 0
+                    while (pos < total) {
+                        val n = ring.readChronological(pos, chunk, minOf(SAVE_CHUNK_SAMPLES, total - pos))
+                        if (n <= 0) break
+                        var bi = 0
+                        for (i in 0 until n) {
+                            val v = chunk[i].toInt()
+                            bytes[bi++] = (v and 0xff).toByte()
+                            bytes[bi++] = (v shr 8 and 0xff).toByte()
+                        }
+                        out.write(bytes, 0, n * 2)
+                        pos += n
+                    }
+                }
+            }
+            displayName
+        } catch (e: Exception) {
+            EventLog.log(LogLevel.ERROR, logTag, "Uložení WAV selhalo ($displayName)", e)
+            null
         }
-        return out
     }
 
     private fun saveWavToDownloads(samples: ShortArray, sampleRateHz: Int, displayName: String, logTag: String): String? {

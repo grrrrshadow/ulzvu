@@ -42,7 +42,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var spectrumView: SpectrumView
     private lateinit var btnToggleAnalysis: Button
     private lateinit var btnSaveRewind: Button
+    private lateinit var btnToggleLoop: Button
     private lateinit var btnToggleMynoise: Button
+
+    /** Which mode the pending permission request is for. */
+    private var pendingMode = CaptureMode.ANALYSIS
+
+    /** True while the save button shows "Ukládám…"/"Uloženo ✓" instead of its normal label. */
+    private var saveLabelTransient = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var service: UlzvuService? = null
@@ -109,7 +116,15 @@ class MainActivity : AppCompatActivity() {
             if (bound) mainHandler.postDelayed(this, UI_POLL_INTERVAL_MS)
         }
     }
-    private val revertSaveButtonRunnable = Runnable { btnSaveRewind.text = getString(R.string.rewind_button) }
+    private val revertSaveButtonRunnable = Runnable {
+        saveLabelTransient = false
+        btnSaveRewind.text = defaultSaveLabel()
+    }
+
+    /** The save button spells out what it will actually write, which differs per mode. */
+    private fun defaultSaveLabel(): String = getString(
+        if (service?.mode == CaptureMode.LOOP) R.string.loop_save_button else R.string.rewind_button
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -130,6 +145,7 @@ class MainActivity : AppCompatActivity() {
         spectrumView = findViewById(R.id.spectrumView)
         btnToggleAnalysis = findViewById(R.id.btnToggleAnalysis)
         btnSaveRewind = findViewById(R.id.btnSaveRewind)
+        btnToggleLoop = findViewById(R.id.btnToggleLoop)
         btnToggleMynoise = findViewById(R.id.btnToggleMynoise)
 
         mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -141,10 +157,18 @@ class MainActivity : AppCompatActivity() {
             if (service?.running == true) {
                 service?.stopCapture()
             } else {
-                requestPermissionsAndStart()
+                requestPermissionsAndStart(CaptureMode.ANALYSIS)
+            }
+        }
+        btnToggleLoop.setOnClickListener {
+            if (service?.running == true) {
+                service?.stopCapture()
+            } else {
+                requestPermissionsAndStart(CaptureMode.LOOP)
             }
         }
         btnSaveRewind.setOnClickListener {
+            saveLabelTransient = true
             btnSaveRewind.text = getString(R.string.rewind_saving)
             mainHandler.removeCallbacks(revertSaveButtonRunnable)
             val playbackSamples = playbackService?.takeIf { it.playbackCaptureActive }?.extractCurrentBuffer()
@@ -193,7 +217,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestPermissionsAndStart() {
+    private fun requestPermissionsAndStart(requestedMode: CaptureMode) {
+        pendingMode = requestedMode
         val needed = mutableListOf(Manifest.permission.RECORD_AUDIO)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             needed.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -209,7 +234,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startService() {
-        ContextCompat.startForegroundService(this, Intent(this, UlzvuService::class.java))
+        val intent = Intent(this, UlzvuService::class.java)
+            .putExtra(EXTRA_CAPTURE_MODE, pendingMode.name)
+        ContextCompat.startForegroundService(this, intent)
     }
 
     private fun updateRecentLogView() {
@@ -220,7 +247,17 @@ class MainActivity : AppCompatActivity() {
     private fun refreshFromService() {
         val s = service ?: return
 
-        btnToggleAnalysis.text = getString(if (s.running) R.string.stop_analysis else R.string.start_analysis)
+        // Analysis and the 5-minute loop are mutually exclusive: whichever is running owns the
+        // microphone, so the other button greys out until it is stopped.
+        val loopMode = s.mode == CaptureMode.LOOP
+        btnToggleAnalysis.isEnabled = !s.running || !loopMode
+        btnToggleLoop.isEnabled = !s.running || loopMode
+        btnToggleAnalysis.text = getString(
+            if (s.running && !loopMode) R.string.stop_analysis else R.string.start_analysis
+        )
+        btnToggleLoop.text = getString(
+            if (s.running && loopMode) R.string.loop_button_stop else R.string.loop_button_start
+        )
         btnSaveRewind.isEnabled = s.running
         btnToggleMynoise.isEnabled = s.running
         val playbackActive = playbackService?.playbackCaptureActive == true
@@ -228,6 +265,14 @@ class MainActivity : AppCompatActivity() {
             if (playbackActive) R.string.mynoise_button_stop else R.string.mynoise_button_start
         )
         if (s.configText.isNotEmpty()) tvConfigInfo.text = s.configText
+
+        if (!saveLabelTransient) btnSaveRewind.text = defaultSaveLabel()
+
+        // Loop mode runs no FFT, so there is no spectrum or peak to show -- leaving the last
+        // analysis frame frozen on screen would look like live data that isn't being measured.
+        val spectrumVisible = !(s.running && loopMode)
+        spectrumView.visibility = if (spectrumVisible) View.VISIBLE else View.INVISIBLE
+        tvPeakInfo.visibility = if (spectrumVisible) View.VISIBLE else View.INVISIBLE
 
         val db = s.latestSpectrumDb
         if (db != null) spectrumView.update(db, s.latestBinWidthHz)

@@ -16,6 +16,11 @@
     <string name="rewind_saved">Uloženo ✓</string>
     <string name="rewind_failed">Zpětné uložení se nepodařilo — podrobnosti v logu.</string>
 
+    <string name="loop_button_start">Smyčka zvuk 5 min</string>
+    <string name="loop_button_stop">Zastavit smyčku</string>
+    <string name="loop_save_button">Uložit 5 min (zvuk + log)</string>
+    <string name="buffer_alloc_failed">Nepodařilo se vyhradit paměť pro smyčku (%1$d MB).</string>
+
     <string name="mynoise_button_start">Zapnout záznam My Noise</string>
     <string name="mynoise_button_stop">Vypnout záznam My Noise</string>
     <string name="mynoise_not_installed">My Noise není na telefonu nainstalovaná.</string>
